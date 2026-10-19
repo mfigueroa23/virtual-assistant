@@ -56,6 +56,8 @@ Properties usadas actualmente:
 | `google_chat_welcome` | Mensaje de bienvenida al agregar el asistente a un space |
 | `google_chat_service_account_json` | JSON de la cuenta de servicio de la app de Chat (`client_email`, `private_key`, `token_uri`) para descargar los archivos adjuntos y publicar las respuestas diferidas con el scope `chat.bot`. Es un secreto. Si falta o no es válido, los archivos quedan como no leídos y se responde igual el texto, pero las respuestas diferidas no se pueden publicar |
 | `google_chat_notice_seconds` | Umbral de aviso en segundos: si el asistente no responde antes, Google Chat recibe un aviso y la respuesta llega después como mensaje nuevo. Si falta se usa `10` |
+| `google_chat_notice_prompt` | Instrucciones con las que el LLM redacta el aviso a partir del mensaje del usuario y los nombres de sus adjuntos. Si falta se responde el aviso fijo, sin llamar al LLM |
+| `google_chat_notice_timeout_seconds` | Tiempo límite en segundos para que el LLM redacte el aviso, contado desde que vence el umbral. Si se supera, o el LLM falla, se responde el aviso fijo. Si falta se usa `5` |
 | `google_timeout` | Tiempo máximo total en segundos para responder un mensaje de Google Chat; al superarlo se responde un mensaje de demora. Valor sugerido: `120` |
 
 > Los valores de la tabla `property` se guardan en texto plano. Revisa [SECURITY.md](SECURITY.md) antes de guardar secretos.
@@ -98,6 +100,9 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 - Cada archivo se convierte a texto una vez y se suma al mensaje como `[Archivo adjunto: nombre]`, así queda en el historial y sirve para los mensajes siguientes.
 - Un archivo de más de 20 MB no se descarga y el texto de más de 30.000 caracteres se lee en parte. Un archivo con problemas queda con una línea de estado y no impide leer los demás.
 - Google Chat espera la respuesta en menos de 30 segundos: si leer los archivos y responder supera `google_chat_notice_seconds`, se responde un aviso y la respuesta se publica después como mensaje nuevo en el space (con mención al usuario si no es un mensaje directo). Si se supera `google_timeout`, el mensaje nuevo es el de demora.
+- El aviso lo redacta el LLM con las instrucciones de `google_chat_notice_prompt`, a partir del texto del mensaje y los nombres de los adjuntos (sin leerlos ni usar el historial), y no se guarda en el historial. Si la respuesta queda lista mientras se redacta el aviso, se responde en el hilo y el aviso se descarta.
+- `google_chat_notice_seconds` + `google_chat_notice_timeout_seconds` debe quedar por debajo de los 30 segundos de Google Chat; si no, Google puede descartar el aviso, aunque la respuesta se publica igual como mensaje nuevo.
+- Ejemplo de `google_chat_notice_prompt`: «Redacta en español, en una o dos frases, un aviso amable que confirme qué estás revisando según el mensaje del usuario y diga que la respuesta llegará en un mensaje nuevo. No respondas la consulta.»
 
 ## Base de datos
 

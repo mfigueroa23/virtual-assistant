@@ -82,7 +82,7 @@ T01 ─► T02 ─► T03 ─► T04 ─► T05 ─┬─► T06 ─┬─► T0
 
 ## Fase 4 — Documentación, calidad y release
 
-- [ ] **T07 — README**
+- [x] **T07 — README**
   - **RF:** RF-07, RF-08, RF-09
   - **Depende de:** T05 (puede ir en paralelo con T06)
   - **Alcance:** en `README.md`, filas de `google_chat_notice_prompt` y `google_chat_notice_timeout_seconds` en la tabla
@@ -92,7 +92,7 @@ T01 ─► T02 ─► T03 ─► T04 ─► T05 ─┬─► T06 ─┬─► T0
   - **Hecho cuando:** `README.md` lista las dos properties con su valor por defecto, la advertencia de los 30 s y un
     ejemplo de `google_chat_notice_prompt`.
 
-- [ ] **T08 — Puerta de calidad**
+- [x] **T08 — Puerta de calidad**
   - **RF:** —
   - **Depende de:** T06, T07
   - **Alcance:** checklist de `AGENTS.md` al terminar una tarea.
