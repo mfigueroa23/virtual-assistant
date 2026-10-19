@@ -164,10 +164,16 @@ async def answer(
   done, _ = await asyncio.wait({ processing }, timeout = notice)
   if processing in done:
     return chat_reply(processing.result())
+  # El aviso compite con la respuesta: si la respuesta llega antes, va en el hilo y el aviso se descarta (D1, D8).
+  drafting = asyncio.create_task(draft_notice(event))
+  done, _ = await asyncio.wait({ processing, drafting }, return_when = asyncio.FIRST_COMPLETED)
+  if processing in done:
+    drafting.cancel()
+    return chat_reply(processing.result())
   delivery = asyncio.create_task(deliver(processing, event))
   pending.add(delivery)
   delivery.add_done_callback(pending.discard)
-  return chat_reply(AVISO)
+  return chat_reply(drafting.result())
 
 async def cancel_pending() -> int:
   # Las solicitudes en curso se pierden al apagar (mejor esfuerzo); queda constancia en el log.

@@ -310,6 +310,7 @@ async def test_answer_responde_en_el_hilo_si_termina_antes_del_aviso(monkeypatch
 ])
 async def test_answer_avisa_y_publica_la_respuesta_como_mensaje_nuevo(monkeypatch, published, event, expected):
     release = asyncio.Event()
+    fake_properties(monkeypatch, {})
     monkeypatch.setattr(google_chat_reply, "ask", asking(release))
 
     assert await answer(GRAPH, event(), 0.01, 1) == chat_reply(AVISO)
@@ -335,6 +336,7 @@ async def test_answer_registra_error_y_no_reintenta_si_falla_la_publicacion(monk
     monkeypatch.setattr(google_chat_reply, "ask", asking(release))
     monkeypatch.setattr(google_chat_reply, "chat_token", fake_chat_token)
     monkeypatch.setattr(google_chat_reply, "create_message", failing_create_message)
+    fake_properties(monkeypatch, {})
 
     assert await answer(GRAPH, space_event(), 0.01, 1) == chat_reply(AVISO)
     release.set()
@@ -358,6 +360,7 @@ async def test_answer_nunca_avisa_si_el_aviso_no_es_menor_que_el_maximo(monkeypa
 @pytest.mark.anyio
 async def test_answer_atiende_por_separado_dos_mensajes_de_la_misma_conversacion(monkeypatch, published):
     release = asyncio.Event()
+    fake_properties(monkeypatch, {})
     monkeypatch.setattr(google_chat_reply, "ask", asking(release))
 
     assert await answer(GRAPH, space_event(), 0.01, 1) == chat_reply(AVISO)
@@ -371,6 +374,7 @@ async def test_answer_atiende_por_separado_dos_mensajes_de_la_misma_conversacion
 
 @pytest.mark.anyio
 async def test_cancel_pending_cancela_las_solicitudes_en_curso(monkeypatch, published):
+    fake_properties(monkeypatch, {})
     monkeypatch.setattr(google_chat_reply, "ask", asking(asyncio.Event()))
     await answer(GRAPH, space_event(), 0.01, 1)
     await answer(GRAPH, dm_event(), 0.01, 1)
@@ -380,3 +384,111 @@ async def test_cancel_pending_cancela_las_solicitudes_en_curso(monkeypatch, publ
     assert len(tasks) == 2 and all(task.cancelled() for task in tasks)
     assert not pending
     assert published == []
+
+
+async def until(condition) -> None:
+    """Espera, como máximo un segundo, a que se cumpla la condición."""
+    for _ in range(1000):
+        if condition():
+            return
+        await asyncio.sleep(0.001)
+    raise AssertionError("la condición no se cumplió a tiempo")
+
+
+@pytest.mark.anyio
+async def test_answer_no_redacta_el_aviso_si_responde_antes_del_umbral(monkeypatch, published, drafting):
+    fake_properties(monkeypatch, NOTICE_PROPERTIES)
+    monkeypatch.setattr(google_chat_reply, "ask", asking())
+
+    assert await answer(GRAPH, space_event(), 0.5, 1) == chat_reply("ok")
+    assert drafting.created == 0
+    assert published == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("event, expected", [
+    (space_event, ("spaces/AAA", "<users/123> ok")),
+    (dm_event, ("spaces/DM1", "ok")),
+])
+async def test_answer_responde_el_aviso_redactado_y_publica_la_respuesta(
+    monkeypatch, published, drafting, event, expected
+):
+    release = asyncio.Event()
+    fake_properties(monkeypatch, NOTICE_PROPERTIES)
+    monkeypatch.setattr(google_chat_reply, "ask", asking(release))
+
+    assert await answer(GRAPH, event(), 0.01, 1) == chat_reply(NOTICE)
+    release.set()
+    await delivered()
+
+    assert published == [expected]
+    assert not pending
+
+
+@pytest.mark.anyio
+async def test_answer_responde_en_el_hilo_si_la_respuesta_llega_antes_que_el_aviso(monkeypatch, published, drafting):
+    release = asyncio.Event()
+    fake_properties(monkeypatch, NOTICE_PROPERTIES)
+    monkeypatch.setattr(google_chat_reply, "ask", asking(release))
+    drafting.model = FakeChatModel(release = asyncio.Event())
+
+    replying = asyncio.create_task(answer(GRAPH, space_event(), 0.01, 1))
+    await until(lambda: drafting.model.calls)
+    release.set()
+
+    assert await replying == chat_reply("ok")
+    await until(lambda: drafting.model.cancelled)
+    assert published == []
+    assert not pending
+
+
+@pytest.mark.anyio
+async def test_answer_no_reinicia_el_maximo_mientras_redacta_el_aviso(monkeypatch, published, drafting):
+    fake_properties(monkeypatch, NOTICE_PROPERTIES)
+    monkeypatch.setattr(google_chat_reply, "ask", asking(asyncio.Event()))
+    drafting.model = FakeChatModel(release = asyncio.Event())
+    start = asyncio.get_running_loop().time()
+
+    assert await answer(GRAPH, space_event(), 0.01, 0.05) == chat_reply(DEMORA)
+    # El límite del aviso es 1 s: responder antes demuestra que el máximo siguió contando desde el inicio.
+    assert asyncio.get_running_loop().time() - start < 0.5
+    assert published == []
+    assert not pending
+
+
+@pytest.mark.anyio
+async def test_answer_usa_el_aviso_fijo_si_falla_la_redaccion_y_publica_la_respuesta(
+    monkeypatch, published, drafting
+):
+    release = asyncio.Event()
+    fake_properties(monkeypatch, NOTICE_PROPERTIES)
+    monkeypatch.setattr(google_chat_reply, "ask", asking(release))
+    drafting.model = FakeChatModel(error = Exception("sin cuota"))
+
+    assert await answer(GRAPH, space_event(), 0.01, 1) == chat_reply(AVISO)
+    release.set()
+    await delivered()
+
+    assert published == [("spaces/AAA", "<users/123> ok")]
+    assert not pending
+
+
+@pytest.mark.anyio
+async def test_answer_no_guarda_el_aviso_en_el_historial(monkeypatch, published, drafting):
+    release = asyncio.Event()
+    asked: list[tuple[str, str]] = []
+
+    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje):
+        asked.append((thread_id, mensaje))
+        await release.wait()
+        return "ok"
+
+    fake_properties(monkeypatch, NOTICE_PROPERTIES)
+    monkeypatch.setattr(google_chat_reply, "ask", fake_ask)
+
+    assert await answer(GRAPH, space_event(), 0.01, 1) == chat_reply(NOTICE)
+    release.set()
+    await delivered()
+
+    assert asked == [("spaces/AAA/threads/T1", "¿cómo pago?")]
+    assert published == [("spaces/AAA", "<users/123> ok")]

@@ -52,7 +52,7 @@ T01 ─► T02 ─► T03 ─► T04 ─► T05 ─┬─► T06 ─┬─► T0
 
 ## Fase 2 — Integración con la respuesta diferida
 
-- [ ] **T04 — Tests de aviso existentes sin instrucciones**
+- [x] **T04 — Tests de aviso existentes sin instrucciones**
   - **RF:** RF-09
   - **Depende de:** T03
   - **Alcance:** los tests actuales que esperan `chat_reply(AVISO)` (`test_answer_avisa_y_publica…`,
@@ -61,7 +61,7 @@ T01 ─► T02 ─► T03 ─► T04 ─► T05 ─┬─► T06 ─┬─► T0
     `answer` empiece a llamar a `draft_notice`. Sin cambios en `src/`.
   - **Hecho cuando:** `uv run pytest tests/google_chat_reply_test.py` pasa completo antes de tocar `answer`.
 
-- [ ] **T05 — Carrera entre la respuesta y el aviso en `answer`**
+- [x] **T05 — Carrera entre la respuesta y el aviso en `answer`**
   - **RF:** RF-01, RF-02, RF-03, RF-04, RF-05, RF-11, RF-13, RF-14, RF-15
   - **Depende de:** T04
   - **Alcance:** en `answer` (`src/services/google_chat_reply.py`), al vencer el umbral lanzar `draft_notice` como
