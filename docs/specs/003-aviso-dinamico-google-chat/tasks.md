@@ -72,7 +72,7 @@ T01 ─► T02 ─► T03 ─► T04 ─► T05 ─┬─► T06 ─┬─► T0
 
 ## Fase 3 — E2E
 
-- [ ] **T06 — Endpoint con el aviso redactado**
+- [x] **T06 — Endpoint con el aviso redactado**
   - **RF:** RF-02
   - **Depende de:** T05 (puede ir en paralelo con T07)
   - **Alcance:** test E1 en `tests/google_chat_test.py` con `TestClient(app)` y el `answer` real: se sustituyen
