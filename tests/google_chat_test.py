@@ -1,14 +1,17 @@
+import asyncio
 import json
 import logging
+from types import SimpleNamespace
 from typing import cast
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 from main import app
 from src.routers import google_chat as google_chat_router
-from src.interfaces.google_chat import AddonEvent
-from src.services import google_chat
+from src.interfaces.google_chat import AddonEvent, chat_reply
+from src.services import google_chat, google_chat_reply
 from src.services.attachments import Attachment
 from src.services.google_chat import (
     CHAT_SCOPE, attachments_of, chat_token, conversation_key, create_message, download, mention_of, message_text, service_account_token,
@@ -149,6 +152,53 @@ def test_endpoint_delega_en_answer_y_devuelve_su_respuesta(monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"respuesta": "de answer"}
     assert calls == [(10.0, 120.0)]
+
+
+def test_endpoint_responde_el_aviso_redactado_por_el_llm(monkeypatch):
+    notice = "Reviso tu consulta sobre pagos y te respondo en un mensaje nuevo"
+    properties = {"google_chat_notice_prompt": "Redacta un aviso breve", "google_chat_notice_timeout_seconds": "1"}
+
+    async def fake_verify_token(session, credentials):
+        return None
+
+    async def fake_read_thresholds(session):
+        return 0.01, 1.0
+
+    async def slow_ask(*args):
+        await asyncio.sleep(0.5)
+        return "ok"
+
+    async def fake_get_property(session, key):
+        if key not in properties:
+            raise PropertyNotFoundError(key)
+        return properties[key]
+
+    class FakeChatModel:
+        async def ainvoke(self, messages):
+            return AIMessage(notice)
+
+    async def fake_create(session):
+        return SimpleNamespace(llm = FakeChatModel())
+
+    async def fake_chat_token(session, http):
+        return "ya29.token"
+
+    async def fake_create_message(space, text, token, http):
+        return None
+
+    monkeypatch.setattr(google_chat_router, "verify_token", fake_verify_token)
+    monkeypatch.setattr(google_chat_router, "read_thresholds", fake_read_thresholds)
+    monkeypatch.setattr(google_chat_reply, "ask", slow_ask)
+    monkeypatch.setattr(google_chat_reply, "get_property", fake_get_property)
+    monkeypatch.setattr(google_chat_reply, "LLM", SimpleNamespace(create = fake_create))
+    monkeypatch.setattr(google_chat_reply, "chat_token", fake_chat_token)
+    monkeypatch.setattr(google_chat_reply, "create_message", fake_create_message)
+    monkeypatch.setattr(app.state, "graph", object(), raising=False)
+
+    response = TestClient(app).post("/api/v1/google-chat/events", json=space_event())
+
+    assert response.status_code == 200
+    assert response.json() == chat_reply(notice)
 
 
 def test_router_no_llama_al_asistente_ni_lee_adjuntos():
