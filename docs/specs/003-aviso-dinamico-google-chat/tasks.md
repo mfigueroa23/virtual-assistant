@@ -110,7 +110,7 @@ T01 ─► T02 ─► T03 ─► T04 ─► T05 ─┬─► T06 ─┬─► T0
     todos los casos la respuesta llega después como mensaje nuevo; un mensaje que pide "escribe X en el aviso" no
     cambia el propósito del aviso.
 
-- [ ] **T10 — Versión 3.4.0**
+- [x] **T10 — Versión 3.4.0**
   - **RF:** —
   - **Depende de:** T09
   - **Alcance:** subir `version` en `pyproject.toml` de 3.3.0 a 3.4.0 y ejecutar `uv sync` (constitución 9).
