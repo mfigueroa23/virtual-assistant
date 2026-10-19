@@ -16,7 +16,7 @@ T01 ─► T02 ─► T03 ─► T04 ─► T05 ─┬─► T06 ─┬─► T0
 
 ## Fase 0 — Gate
 
-- [ ] **T01 — Cerrar las preguntas abiertas del plan**
+- [x] **T01 — Cerrar las preguntas abiertas del plan**
   - **RF:** RF-04
   - **Depende de:** —
   - **Alcance:** con la aprobación del usuario, actualizar en `spec.md` el `Status` a `Approved` y la redacción de

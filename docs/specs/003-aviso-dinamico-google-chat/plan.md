@@ -1,7 +1,7 @@
 # Plan 003 — Aviso de espera redactado por el LLM en Google Chat
 
 - **Spec:** [spec.md](spec.md) (approved 2026-10-19)
-- **Status:** Draft
+- **Status:** Approved
 - **Version:** 3.4.0 (feat → minor, desde 3.3.0)
 
 El plan respeta la constitución: la lógica queda en `services` y el router no cambia (§2), los tests corren sin BD real
@@ -59,7 +59,7 @@ nueva son filas de la tabla `property`, que se cargan a mano como el resto:
 | D6 | Reutilizar `LLM.create(session)`, es decir, el mismo `google_model` | Añadir una property con un modelo más ligero para el aviso | La spec no lo pide, no hay dependencia nueva y, si la latencia molesta, el límite configurable ya acota el impacto. Queda como mejora posible en **Risks**. |
 | D7 | `draft_notice` nunca lanza excepciones: mapea `TimeoutError` (warning), `PropertyNotFoundError` de las instrucciones (sin log de error), `ValueError` del límite, errores de `LLM.create` o del LLM (`logger.error` o `logger.exception`) y respuestas vacías a `AVISO` | Propagar los errores a `answer` o al router para que respondan `NO_DISPONIBLE` | El aviso es opcional. Si falla, el usuario igual recibe el aviso fijo y la respuesta diferida sigue su curso (RF-11, RF-13). Es el mismo patrón de devolver siempre un texto que la D6 del plan 001. |
 | D8 | Al ganar la respuesta, cancelar la tarea del aviso sin esperarla | Esperar a que termine para no dejar la llamada al LLM en vuelo | Esperarla retrasaría la respuesta en el hilo. La cancelación corta la llamada `ainvoke` y la tarea no tiene efectos laterales que limpiar: no escribe en BD ni en el historial (RF-15). |
-| D9 | Mantener el reloj de `google_timeout` de la spec 001, que arranca con `process` justo después de verificar el token. El aviso no lo reinicia | Reiniciar el máximo después del aviso o arrancarlo antes de verificar el token | RF-04 pide que el aviso no altere el máximo. La spec habla de "desde la llegada del evento", pero `process` ya arranca tras la verificación (D1 del plan 001). Cambiarlo tocaría el router sin necesidad. |
+| D9 | Mantener el reloj de `google_timeout` de la spec 001, que arranca con `process` justo después de verificar el token. El aviso no lo reinicia | Reiniciar el máximo después del aviso o arrancarlo antes de verificar el token | RF-04 pide que el aviso no altere el máximo y que se cuente desde que empieza el procesamiento, tras verificar el token, como ya hace `process` (D1 del plan 001). Cambiarlo tocaría el router sin necesidad. |
 | D10 | No validar en código que umbral + límite < 30 s, solo advertirlo en el README | Recortar el límite a `30 − umbral` | La spec lo deja como restricción documental. Además, el límite real de Google cuenta desde que envía el evento, un instante que el servicio no conoce con precisión, así que un recorte daría una falsa garantía. |
 | D11 | Mantener `draft_notice` en `google_chat_reply.py` | Crear un módulo `google_chat_notice.py` | Son unas 40 líneas que dependen de `answer`, de las constantes de mensajes y de los mismos helpers. Separarlas obligaría a repartir los monkeypatch de los tests entre dos módulos. |
 

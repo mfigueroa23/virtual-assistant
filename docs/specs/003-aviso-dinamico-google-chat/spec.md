@@ -1,6 +1,6 @@
 # Spec 003 — Aviso de espera redactado por el LLM en Google Chat
 
-- **Status:** Draft
+- **Status:** Approved
 - **Date:** 2026-10-19
 - **Scope:** virtual-assistant — endpoint de eventos de Google Chat (respuesta diferida de la spec 001)
 
@@ -42,7 +42,7 @@ en un mensaje nuevo cuando esté lista»; "tiempo límite del aviso" es el nuevo
 - **RF-03** — Cuando el asistente obtenga la respuesta antes del umbral de aviso, el sistema debe responder en el
   hilo sin solicitar ningún aviso al LLM.
 - **RF-04** — Mientras se redacta el aviso, el sistema debe continuar procesando la solicitud, contando el tiempo
-  máximo total desde la llegada del evento.
+  máximo total desde que empieza el procesamiento del mensaje, tras verificar el token, sin reiniciarlo por el aviso.
 - **RF-05** — Cuando la respuesta del asistente quede lista antes que el aviso, el sistema debe responder en el hilo
   con la respuesta, descartar el aviso y no publicar ningún mensaje diferido.
 - **RF-06** — El sistema debe redactar el aviso sin leer el contenido de los adjuntos ni el historial de la
