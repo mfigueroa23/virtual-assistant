@@ -27,7 +27,7 @@ T01 ─► T02 ─► T03 ─► T04 ─► T05 ─┬─► T06 ─┬─► T0
 
 ## Fase 1 — Redacción del aviso
 
-- [ ] **T02 — Configuración del aviso**
+- [x] **T02 — Configuración del aviso**
   - **RF:** RF-07, RF-08
   - **Depende de:** T01
   - **Alcance:** `read_notice_settings(session) -> tuple[str | None, float]` y la constante
@@ -37,7 +37,7 @@ T01 ─► T02 ─► T03 ─► T04 ─► T05 ─┬─► T06 ─┬─► T0
   - **Hecho cuando:** U-N4 pasa en `tests/google_chat_reply_test.py` (devuelve el límite configurado y `5` si falta;
     `None` si faltan las instrucciones).
 
-- [ ] **T03 — `draft_notice` con fallback al aviso fijo**
+- [x] **T03 — `draft_notice` con fallback al aviso fijo**
   - **RF:** RF-01, RF-06, RF-07, RF-09, RF-10, RF-11, RF-12
   - **Depende de:** T02
   - **Alcance:** `draft_notice(event) -> str` en `src/services/google_chat_reply.py` (D11): sesión propia

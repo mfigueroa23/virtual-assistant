@@ -1,13 +1,16 @@
 import asyncio
 import logging
+from types import SimpleNamespace
 from typing import Any, cast
 import httpx
 import pytest
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.interfaces.google_chat import AddonEvent, chat_reply
+from src.interfaces.google_chat import AddonEvent, ChatAttachment, chat_reply
 from src.services import google_chat_reply
 from src.services.google_chat_reply import (
-    AVISO, DEMORA, NO_DISPONIBLE, answer, cancel_pending, pending, process, read_thresholds)
+    AVISO, AVISO_DATOS, DEMORA, NO_DISPONIBLE, answer, cancel_pending, draft_notice, pending, process,
+    read_notice_settings, read_thresholds)
 from src.utils.exceptions.agents import AgentNotFoundError
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.property import PropertyNotFoundError
@@ -102,6 +105,163 @@ async def test_read_thresholds_lanza_error_si_falta_el_maximo(monkeypatch):
 
     with pytest.raises(PropertyNotFoundError):
         await read_thresholds(SESSION)
+
+
+@pytest.mark.anyio
+async def test_read_notice_settings_lee_las_instrucciones_y_el_limite(monkeypatch):
+    fake_properties(monkeypatch, {"google_chat_notice_prompt": "Avisa", "google_chat_notice_timeout_seconds": "3"})
+
+    assert await read_notice_settings(SESSION) == ("Avisa", 3)
+
+
+@pytest.mark.anyio
+async def test_read_notice_settings_usa_5_segundos_y_sin_instrucciones_si_faltan(monkeypatch):
+    fake_properties(monkeypatch, {})
+
+    assert await read_notice_settings(SESSION) == (None, 5)
+
+
+PROMPT = "Redacta un aviso breve"
+NOTICE = "Reviso tu consulta sobre pagos y te respondo en un mensaje nuevo"
+NOTICE_PROPERTIES = {"google_chat_notice_prompt": PROMPT, "google_chat_notice_timeout_seconds": "1"}
+
+
+class FakeChatModel:
+    """LLM falso del aviso: registra los mensajes y responde `text`, espera `release` o lanza `error`."""
+
+    def __init__(self, text: str = NOTICE, release: asyncio.Event | None = None, error: Exception | None = None):
+        self.text = text
+        self.release = release
+        self.error = error
+        self.calls: list[list[BaseMessage]] = []
+        self.cancelled = False
+
+    async def ainvoke(self, messages: list[BaseMessage]) -> AIMessage:
+        self.calls.append(messages)
+        try:
+            if self.release is not None:
+                await self.release.wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        if self.error is not None:
+            raise self.error
+        return AIMessage(self.text)
+
+
+class Drafting:
+    """Sustituye LLM.create en google_chat_reply: entrega `model` o lanza `error`, y cuenta las creaciones."""
+
+    def __init__(self):
+        self.model = FakeChatModel()
+        self.error: Exception | None = None
+        self.created = 0
+
+    async def create(self, session):
+        self.created += 1
+        if self.error is not None:
+            raise self.error
+        return SimpleNamespace(llm = self.model)
+
+
+@pytest.fixture
+def drafting(monkeypatch) -> Drafting:
+    fake = Drafting()
+    monkeypatch.setattr(google_chat_reply, "LLM", SimpleNamespace(create = fake.create))
+    return fake
+
+
+def attachment_event() -> AddonEvent:
+    event = dm_event()
+    assert event.chat and event.chat.message_payload and event.chat.message_payload.message
+    event.chat.message_payload.message.attachment = [ChatAttachment.model_validate({
+        "contentName": "contrato.pdf", "contentType": "application/pdf", "source": "UPLOADED_CONTENT",
+        "attachmentDataRef": {"resourceName": "spaces/DM1/attachments/A1"}})]
+    return event
+
+
+@pytest.mark.anyio
+async def test_draft_notice_redacta_el_aviso_con_las_instrucciones_y_el_mensaje(monkeypatch, drafting):
+    fake_properties(monkeypatch, NOTICE_PROPERTIES)
+
+    assert await draft_notice(space_event()) == NOTICE
+    [[system, human]] = drafting.model.calls
+    assert isinstance(system, SystemMessage) and system.text == PROMPT
+    assert isinstance(human, HumanMessage) and "¿cómo pago?" in human.text and AVISO_DATOS in human.text
+
+
+@pytest.mark.anyio
+async def test_draft_notice_usa_los_nombres_de_los_adjuntos_sin_leerlos_ni_el_historial(monkeypatch, drafting):
+    async def unexpected(*args):
+        raise AssertionError("el aviso no debe leer los adjuntos")
+
+    fake_properties(monkeypatch, NOTICE_PROPERTIES)
+    monkeypatch.setattr(google_chat_reply, "read_files", unexpected)
+    monkeypatch.setattr(google_chat_reply, "download", unexpected)
+
+    assert await draft_notice(attachment_event()) == NOTICE
+    [messages] = drafting.model.calls
+    assert len(messages) == 2
+    assert "contrato.pdf" in messages[1].text
+
+
+@pytest.mark.anyio
+async def test_draft_notice_lee_las_instrucciones_en_cada_aviso(monkeypatch, drafting):
+    values = dict(NOTICE_PROPERTIES)
+    fake_properties(monkeypatch, values)
+
+    await draft_notice(space_event())
+    values["google_chat_notice_prompt"] = "Otras instrucciones"
+    await draft_notice(space_event())
+
+    assert [messages[0].text for messages in drafting.model.calls] == [PROMPT, "Otras instrucciones"]
+
+
+@pytest.mark.anyio
+async def test_draft_notice_usa_el_aviso_fijo_sin_llamar_al_llm_si_faltan_las_instrucciones(monkeypatch, drafting):
+    fake_properties(monkeypatch, {})
+
+    assert await draft_notice(space_event()) == AVISO
+    assert drafting.created == 0
+
+
+@pytest.mark.anyio
+async def test_draft_notice_usa_el_aviso_fijo_si_el_llm_supera_el_limite(monkeypatch, drafting, caplog):
+    fake_properties(monkeypatch, {**NOTICE_PROPERTIES, "google_chat_notice_timeout_seconds": "0.01"})
+    drafting.model = FakeChatModel(release = asyncio.Event())
+
+    assert await draft_notice(space_event()) == AVISO
+    assert drafting.model.cancelled
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("properties, model_error, create_error", [
+    (NOTICE_PROPERTIES, Exception("detalle interno"), None),
+    (NOTICE_PROPERTIES, None, PropertyNotFoundError("google_api_key")),
+    ({**NOTICE_PROPERTIES, "google_chat_notice_timeout_seconds": "cinco"}, None, None),
+])
+async def test_draft_notice_usa_el_aviso_fijo_y_registra_el_error_si_falla(
+    monkeypatch, drafting, caplog, properties, model_error, create_error
+):
+    fake_properties(monkeypatch, properties)
+    drafting.model = FakeChatModel(error = model_error)
+    drafting.error = create_error
+
+    notice = await draft_notice(space_event())
+
+    assert notice == AVISO
+    assert "detalle interno" not in notice
+    assert any(record.levelno == logging.ERROR for record in caplog.records)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("text", ["", "   \n"])
+async def test_draft_notice_usa_el_aviso_fijo_si_el_llm_responde_vacio(monkeypatch, drafting, text):
+    fake_properties(monkeypatch, NOTICE_PROPERTIES)
+    drafting.model = FakeChatModel(text)
+
+    assert await draft_notice(space_event()) == AVISO
 
 
 def asking(release: asyncio.Event | None = None):
