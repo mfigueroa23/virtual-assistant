@@ -20,7 +20,7 @@ anyio==4.15.1
     #   watchfiles
 asyncpg==0.32.0
     # via virtual-assistant
-certifi==2026.7.22
+certifi==2026.10.19
     # via
     #   httpcore
     #   httpx
@@ -204,7 +204,7 @@ packaging==26.3
     #   pytest
 pgvector==0.5.1
     # via virtual-assistant
-pillow==12.3.0
+pillow==13.0.0
     # via python-pptx
 pluggy==1.6.0
     # via pytest
