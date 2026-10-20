@@ -1,4 +1,5 @@
-from langchain_core.messages import HumanMessage
+from collections.abc import Sequence
+from langchain_core.messages import AnyMessage, HumanMessage
 from langgraph.graph import MessagesState
 from langgraph.graph.state import CompiledStateGraph
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +14,8 @@ async def ask(
   coordinator: str,
   audiencia: str,
   thread_id: str,
-  mensaje: str
+  mensaje: str,
+  previous: Sequence[AnyMessage] = ()
 ) -> str:
   llm = await LLM.create(session)
   prompt = await get_prompt(session, coordinator)
@@ -21,7 +23,8 @@ async def ask(
   if not sub_agents:
     raise AgentNotFoundError(f"sub-agentes de la audiencia '{audiencia}'")
   result = await graph.ainvoke(
-    { "messages": [HumanMessage(mensaje)] },
+    # previous son mensajes ya ocurridos que aún no están en el historial, como los de WhatsApp durante la pausa (D4).
+    { "messages": [*previous, HumanMessage(mensaje)] },
     config = { "configurable": { "thread_id": thread_id } },
     context = CoordinatorContext(
       llm = llm.llm,

@@ -31,7 +31,7 @@ T01 ─┬─► T02 ───────────┐
 
 ## Fase 1 — Cimientos
 
-- [ ] **T02 — Modelos y migración del canal**
+- [x] **T02 — Modelos y migración del canal**
   - **RF:** RF-04, RF-07, RF-22, RF-25
   - **Depende de:** T01 (puede ir en paralelo con T03 y T05)
   - **Alcance:** `src/models/whatsapp.py` con `WhatsappConversation`, `WhatsappMessage` y `WhatsappEvent` tal como
@@ -41,7 +41,7 @@ T01 ─┬─► T02 ───────────┐
   - **Hecho cuando:** `uv run alembic upgrade head` y luego `uv run alembic downgrade -1 && uv run alembic upgrade head`
     terminan sin error, `uv run alembic check` no reporta diferencias y `uv run pyright` da 0 errores.
 
-- [ ] **T03 — Excepción y esquemas del webhook**
+- [x] **T03 — Excepción y esquemas del webhook**
   - **RF:** RF-05, RF-20
   - **Depende de:** T01 (puede ir en paralelo con T02 y T05)
   - **Alcance:** `InvalidSignatureError` en `src/utils/exceptions/whatsapp.py`. `src/interfaces/whatsapp.py` con
@@ -51,7 +51,7 @@ T01 ─┬─► T02 ───────────┐
     audio, sticker, reacción, echo y `whatsapp.message.updated` con `failed`), que T07 usará como fixtures en
     `tests/whatsapp_reply_test.py`, se parsean con `WhatsappEvent.model_validate`.
 
-- [ ] **T04 — Cliente de YCloud**
+- [x] **T04 — Cliente de YCloud**
   - **RF:** RF-02, RF-12, RF-13, RF-14, RF-17
   - **Depende de:** T03
   - **Alcance:** `src/services/ycloud.py`: `verify_signature` con el cuerpo crudo, `hmac.compare_digest` y 300 s de
@@ -60,7 +60,7 @@ T01 ─┬─► T02 ───────────┐
     como parámetro, como `src/services/google_chat.py`.
   - **Hecho cuando:** U-Y1 a U-Y9 pasan con `uv run pytest tests/ycloud_test.py`.
 
-- [ ] **T05 — Historial previo en `ask` y transcripción de audio**
+- [x] **T05 — Historial previo en `ask` y transcripción de audio**
   - **RF:** RF-18, RF-26
   - **Depende de:** T01 (puede ir en paralelo con T02 y T03)
   - **Alcance:** parámetro `previous: Sequence[BaseMessage] = ()` en `ask` de `src/services/assistant.py`, que antepone
