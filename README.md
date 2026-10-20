@@ -4,7 +4,7 @@ Backend de asistente virtual, construido con FastAPI, SQLAlchemy (async), LangGr
 
 ## Arquitectura
 
-- Hay dos coordinadores: `Agente Externo` atiende a los clientes por `/chat` y `Agente Interno` a los colaboradores por Google Chat.
+- Hay tres coordinadores: `Agente Externo` atiende a los clientes por `/chat`, `Agente Interno` a los colaboradores por Google Chat y `Agente WhatsApp` a los contactos del WhatsApp de Marco (vía YCloud), en primera persona y con las áreas de la audiencia `externo`.
 - Cada coordinador delega la consulta en el sub-agente del área que corresponde (un sub-agente por área, según la audiencia `externo` o `interno`).
 - Cada sub-agente busca en las preguntas frecuentes de su área con similitud coseno (pgvector) antes de responder.
 - Los prompts, áreas y sub-agentes se configuran en la base de datos. El historial de cada conversación se guarda en PostgreSQL con el checkpointer de LangGraph.
@@ -59,6 +59,12 @@ Properties usadas actualmente:
 | `google_chat_notice_prompt` | Instrucciones con las que el LLM redacta el aviso a partir del mensaje del usuario y los nombres de sus adjuntos. Si falta se responde el aviso fijo, sin llamar al LLM |
 | `google_chat_notice_timeout_seconds` | Tiempo límite en segundos para que el LLM redacte el aviso, contado desde que vence el umbral. Si se supera, o el LLM falla, se responde el aviso fijo. Si falta se usa `5` |
 | `google_timeout` | Tiempo máximo total en segundos para responder un mensaje de Google Chat; al superarlo se responde un mensaje de demora. Valor sugerido: `120` |
+| `whatsapp_enabled` | `true` para que el asistente atienda WhatsApp. Si falta o tiene otro valor, los eventos se aceptan con `200` pero no se procesan |
+| `ycloud_api_key` | API key de YCloud (cabecera `X-API-Key`) para enviar mensajes, marcarlos como leídos y descargar medios. Es un secreto |
+| `ycloud_webhook_secret` | Secreto de firma del endpoint de webhook de YCloud, para verificar `YCloud-Signature`. Es un secreto. Si falta, el webhook responde `503` |
+| `whatsapp_pause_hours` | Horas que el asistente deja de responder una conversación después de que Marco escribe desde el celular; cada mensaje suyo renueva la ventana. Si falta se usa `12` |
+| `whatsapp_grouping_seconds` | Segundos sin mensajes nuevos del contacto que se esperan antes de responder la ráfaga completa. Si falta se usa `8` |
+| `whatsapp_timeout` | Tiempo máximo en segundos para responder un lote de WhatsApp; al superarlo no se envía nada. Si falta se usa `120` |
 
 > Los valores de la tabla `property` se guardan en texto plano. Revisa [SECURITY.md](SECURITY.md) antes de guardar secretos.
 
@@ -93,6 +99,7 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 | `GET` | `/health` | Verifica la base de datos. `200` si está disponible, `503` si no |
 | `POST` | `/chat` | Chat web con el coordinador externo. Recibe `chat_id` (UUID generado por el cliente) y `mensaje` |
 | `POST` | `/api/v1/google-chat/events` | Eventos del complemento de Google Chat con el coordinador interno. Exige el ID token del complemento en `Authorization: Bearer`, si no es válido responde `401` |
+| `POST` | `/api/v1/whatsapp/events` | Webhook de YCloud para el WhatsApp de Marco con el coordinador de WhatsApp. Exige la cabecera `YCloud-Signature`: si falta, no coincide o tiene más de 5 minutos responde `401`; sin secreto o sin base de datos responde `503` para que YCloud reintente. En los demás casos responde `200` sin esperar la respuesta del asistente |
 
 ### Archivos adjuntos en Google Chat
 
@@ -104,6 +111,36 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 - `google_chat_notice_seconds` + `google_chat_notice_timeout_seconds` debe quedar por debajo de los 30 segundos de Google Chat; si no, Google puede descartar el aviso, aunque la respuesta se publica igual como mensaje nuevo.
 - Ejemplo de `google_chat_notice_prompt`: «Redacta en español, en una o dos frases, un aviso amable que confirme qué estás revisando según el mensaje del usuario y diga que la respuesta llegará en un mensaje nuevo. No respondas la consulta.»
 
+### WhatsApp (YCloud)
+
+El número está conectado a YCloud en modo coexistencia: la app de WhatsApp Business del celular sigue funcionando y los mensajes llegan también por webhook. El asistente responde como Marco, sin presentarse como IA, todos los chats 1 a 1 (los grupos no llegan por la API).
+
+- **Ráfagas:** cada mensaje del contacto reinicia una espera de `whatsapp_grouping_seconds`; al vencer, el asistente responde una sola vez a todo lo acumulado. Lo que llega mientras responde va en la respuesta siguiente.
+- **Toma de la conversación:** cuando Marco escribe desde el celular (evento `whatsapp.smb.message.echoes`), el asistente deja de responder esa conversación durante `whatsapp_pause_hours`, contadas desde el último mensaje de Marco. Si estaba preparando una respuesta, la descarta. Los mensajes de la pausa, del contacto y de Marco, pasan al historial para que el asistente tenga el contexto al retomar.
+- **Tipos de mensaje:** texto, imágenes y documentos (se leen como los adjuntos de Google Chat, hasta 20 MB) y notas de voz (las transcribe Gemini). Videos, stickers, ubicaciones, tarjetas de contacto y reacciones quedan en el historial como una línea, pero no generan respuesta por sí solos.
+- **Respuestas:** se envían como texto, en varios mensajes si superan los 4096 caracteres, y los mensajes del contacto se marcan como leídos.
+- **Fallos:** si el LLM, la base de datos o YCloud fallan, o se supera `whatsapp_timeout`, el contacto no recibe nada y queda en el log sin el contenido del mensaje. Marco responde desde su celular.
+- **Reinicios:** al arrancar se retoman los lotes con mensajes de los últimos 30 minutos; los más viejos quedan solo para el historial.
+
+Para activar el canal:
+
+1. Cargar el coordinador con su prompt en primera persona. Debe evitar comprometer a Marco con fechas, precios, reuniones o encargos:
+
+   ```sql
+   INSERT INTO agents (name, prompt) VALUES ('Agente WhatsApp', 'Eres Marco Figueroa respondiendo tu WhatsApp...');
+   ```
+
+2. Cargar `ycloud_api_key` y, si se quieren otros valores, `whatsapp_pause_hours`, `whatsapp_grouping_seconds` y `whatsapp_timeout`.
+3. En YCloud, **Developers → Webhooks**: crear un endpoint con la URL pública `https://<host>/api/v1/whatsapp/events` y los eventos `whatsapp.inbound_message.received`, `whatsapp.smb.message.echoes` y `whatsapp.message.updated`. Guardar el secreto que muestra YCloud (solo una vez) en `ycloud_webhook_secret`.
+4. Revisar en el log que los eventos llegan con `200` y luego activar el canal:
+
+   ```sql
+   INSERT INTO property (key, value) VALUES ('whatsapp_enabled', 'true')
+   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+   ```
+
+Para apagarlo, `whatsapp_enabled = false`: aplica desde el siguiente evento.
+
 ## Base de datos
 
 | Tabla | Qué contiene |
@@ -114,6 +151,9 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 | `faq_categories` | Categorías de preguntas frecuentes de cada área |
 | `faqs` | Preguntas frecuentes con su embedding. `status` es `re-index` si falta generar el embedding e `index` si ya está indexada |
 | `cors_origins` | Orígenes que pueden consumir la API desde el navegador (CORS). `enabled` es `true` por defecto |
+| `whatsapp_conversations` | Una fila por contacto de WhatsApp: hasta cuándo está en pausa, cuándo vence la espera del lote, qué proceso lo responde y un contador (`epoch`) que sube con cada mensaje de Marco |
+| `whatsapp_messages` | Cola de mensajes de WhatsApp pendientes de responder o de pasar al historial. Las filas se borran cuando quedan en el historial del checkpointer |
+| `whatsapp_events` | Ids de los eventos de YCloud ya recibidos, para descartar reintentos. Se borran a los 7 días |
 
 ### Orígenes CORS
 

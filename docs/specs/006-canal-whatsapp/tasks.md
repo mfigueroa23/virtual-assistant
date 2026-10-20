@@ -134,7 +134,7 @@ T01 ─┬─► T02 ───────────┐
 
 ## Fase 4 — Documentación, calidad y release
 
-- [ ] **T12 — README**
+- [x] **T12 — README**
   - **RF:** —
   - **Depende de:** T11
   - **Alcance:** fila del endpoint en "Endpoints"; sección "WhatsApp (YCloud)" con las 6 properties y sus valores por
@@ -145,7 +145,7 @@ T01 ─┬─► T02 ───────────┐
     `ycloud_api_key`, `ycloud_webhook_secret`, `whatsapp_pause_hours`, `whatsapp_grouping_seconds` y
     `whatsapp_timeout`, y las tablas `whatsapp_conversations`, `whatsapp_messages` y `whatsapp_events`.
 
-- [ ] **T13 — Puerta de calidad**
+- [x] **T13 — Puerta de calidad**
   - **RF:** —
   - **Depende de:** T12
   - **Alcance:** checklist de `AGENTS.md` sobre toda la rama.
