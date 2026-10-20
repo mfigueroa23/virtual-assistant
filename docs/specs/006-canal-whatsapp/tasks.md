@@ -153,7 +153,7 @@ T01 ─┬─► T02 ───────────┐
     0 errores, `uv run alembic check` no reporta diferencias y `uv run alembic upgrade head` no tiene migraciones
     pendientes en la BD local.
 
-- [ ] **T14 — Versión 3.5.0**
+- [x] **T14 — Versión 3.5.0**
   - **RF:** —
   - **Depende de:** T13
   - **Alcance:** `version = "3.5.0"` en `pyproject.toml` y `uv sync`, en un solo commit con `uv.lock`.
