@@ -71,7 +71,7 @@ T01 ─┬─► T02 ───────────┐
 
 ## Fase 2 — Servicio del canal
 
-- [ ] **T06 — Acceso a datos del canal**
+- [x] **T06 — Acceso a datos del canal**
   - **RF:** RF-04, RF-07, RF-08, RF-11, RF-22, RF-23, RF-28, RF-29, RF-30, RF-31
   - **Depende de:** T02, T03
   - **Alcance:** `src/services/whatsapp.py`: `register_event` (`ON CONFLICT DO NOTHING` y poda de más de 7 días),
@@ -83,7 +83,7 @@ T01 ─┬─► T02 ───────────┐
   - **Hecho cuando:** U-W22 y U-W23 pasan, `uv run pyright` da 0 errores y el SQL de `claim_batch` y `register_event`
     queda señalado para revisarlo en el PR (los tests no ejecutan SQL).
 
-- [ ] **T07 — Recepción y despacho de eventos**
+- [x] **T07 — Recepción y despacho de eventos**
   - **RF:** RF-04, RF-05, RF-20, RF-22, RF-23, RF-24, RF-25, RF-27, RF-35
   - **Depende de:** T06
   - **Alcance:** en `src/services/whatsapp_reply.py`: `handle_event` (duplicado → nada; entrante con `group_id` →
@@ -93,7 +93,7 @@ T01 ─┬─► T02 ───────────┐
     `tests/whatsapp_reply_test.py`.
   - **Hecho cuando:** U-W1, U-W2, U-W16, U-W17, U-W18, U-W19, U-W21 y U-W27 pasan.
 
-- [ ] **T08 — Procesamiento de lotes de texto**
+- [x] **T08 — Procesamiento de lotes de texto**
   - **RF:** RF-07, RF-08, RF-09, RF-10, RF-11, RF-12, RF-13, RF-14, RF-15, RF-16, RF-25, RF-26, RF-32, RF-33, RF-34
   - **Depende de:** T04, T05, T07
   - **Alcance:** `process_conversation` (bucle `claim_batch` → espera hasta `batch_due_at` → lote, D2) y `answer_batch`:
@@ -103,7 +103,7 @@ T01 ─┬─► T02 ───────────┐
     el envío (D5), y errores con log sin contenido y silencio (D12).
   - **Hecho cuando:** U-W3, U-W4, U-W5, U-W6, U-W7, U-W9, U-W10, U-W20, U-W24, U-W25, U-W26 y U-H2 pasan.
 
-- [ ] **T09 — Medios y mensajes no soportados**
+- [x] **T09 — Medios y mensajes no soportados**
   - **RF:** RF-17, RF-18, RF-19, RF-20, RF-21
   - **Depende de:** T08 (puede ir en paralelo con T10)
   - **Alcance:** en `answer_batch`, imágenes y documentos con `read_attachments` y `download_media` (la leyenda va
@@ -112,7 +112,7 @@ T01 ─┬─► T02 ───────────┐
     `history`. Los medios de mensajes en pausa no se leen (D11).
   - **Hecho cuando:** U-W11, U-W12, U-W13, U-W14 y U-W15 pasan.
 
-- [ ] **T10 — Recuperación al arrancar y cancelación al apagar**
+- [x] **T10 — Recuperación al arrancar y cancelación al apagar**
   - **RF:** RF-11
   - **Depende de:** T08 (puede ir en paralelo con T09)
   - **Alcance:** `recover(graph)`: agenda los teléfonos de `pending_phones` con último mensaje de menos de 30 min y pasa
