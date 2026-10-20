@@ -122,7 +122,7 @@ T01 ─┬─► T02 ───────────┐
 
 ## Fase 3 — Integración
 
-- [ ] **T11 — Endpoint y wiring en `main.py`**
+- [x] **T11 — Endpoint y wiring en `main.py`**
   - **RF:** RF-01, RF-02, RF-03, RF-06, RF-28
   - **Depende de:** T09, T10
   - **Alcance:** `src/routers/whatsapp.py` con `POST /api/v1/whatsapp/events`: cuerpo crudo, `ycloud_webhook_secret`
