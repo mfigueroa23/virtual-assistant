@@ -131,3 +131,16 @@ async def test_un_archivo_con_problemas_no_detiene_a_los_demas(monkeypatch, capl
     assert blocks[4] == "[Archivo adjunto: largo.txt · leído en parte, es muy largo]\n" + "a" * 50
     assert blocks[5] == "[Archivo adjunto: ok.txt]\nhola"
     assert "roto.txt" in caplog.text and "contenido secreto" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_u_a1_transcribe_audio_envia_el_audio_con_su_mime():
+    llm = fake_llm("Hola Marco, te quería consultar por tu disponibilidad")
+
+    text = await attachments.transcribe_audio(b"ogg", "audio/ogg; codecs=opus", llm)
+
+    assert text == "Hola Marco, te quería consultar por tu disponibilidad"
+    content = llm.seen[-1].content
+    assert isinstance(content, list)
+    assert content[0] == {"type": "text", "text": attachments.TRANSCRIBE_AUDIO}
+    assert content[1] == {"type": "audio", "base64": "b2dn", "mime_type": "audio/ogg"}
