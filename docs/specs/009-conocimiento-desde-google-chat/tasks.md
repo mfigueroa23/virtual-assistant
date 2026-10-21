@@ -193,7 +193,7 @@ T02 ─────────────────────────�
 
 ## Fase 5 — Documentación, calidad y release
 
-- [ ] **T11 — README**
+- [x] **T11 — README**
   - **RF:** —
   - **Depende de:** T08, T09, T10
   - **Alcance:**
@@ -207,7 +207,7 @@ T02 ─────────────────────────�
   - **Hecho cuando:** `README.md` contiene `knowledge_proposals`, `Conocimiento`, `proponer_cambio`, «Confirmar»,
     «Guardar» y el `INSERT INTO agents` del «Agente Interno».
 
-- [ ] **T12 — Puerta de calidad**
+- [x] **T12 — Puerta de calidad**
   - **RF:** —
   - **Depende de:** T11
   - **Alcance:** checklist de `AGENTS.md` sobre toda la rama.

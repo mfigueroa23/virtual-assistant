@@ -6,6 +6,7 @@ Backend de asistente virtual, construido con FastAPI, SQLAlchemy (async), LangGr
 
 - Hay tres coordinadores: `Agente Externo` atiende a los clientes por `/chat`, `Agente Interno` a los colaboradores por Google Chat y `Agente WhatsApp` a los contactos del WhatsApp de Marco (vía YCloud), en primera persona y con las áreas de la audiencia `externo`.
 - Cada coordinador delega la consulta en el sub-agente del área que corresponde (un sub-agente por área, según la audiencia `externo` o `interno`).
+- El área `interno` «Conocimiento» tiene un sub-agente propio que administra las preguntas frecuentes de las áreas `externo` desde Google Chat (ver [Agente Interno y conocimiento](#agente-interno-y-conocimiento)).
 - Cada sub-agente busca en las preguntas frecuentes de su área con similitud coseno (pgvector) antes de responder.
 - Los prompts, áreas y sub-agentes se configuran en la base de datos. El historial de cada conversación se guarda en PostgreSQL con el checkpointer de LangGraph.
 
@@ -102,7 +103,7 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 | `GET` | `/` | Liveness: responde `true` si el proceso está vivo, sin consultar la base de datos |
 | `GET` | `/health` | Verifica la base de datos. `200` si está disponible, `503` si no |
 | `POST` | `/chat` | Chat web con el coordinador externo. Recibe `chat_id` (UUID generado por el cliente) y `mensaje` |
-| `POST` | `/api/v1/google-chat/events` | Eventos del complemento de Google Chat con el coordinador interno. Exige el ID token del complemento en `Authorization: Bearer`, si no es válido responde `401` |
+| `POST` | `/api/v1/google-chat/events` | Eventos del complemento de Google Chat con el coordinador interno, las respuestas en hilos de avisos de WhatsApp y los clics en las tarjetas de conocimiento. Exige el ID token del complemento en `Authorization: Bearer`, si no es válido responde `401` |
 | `POST` | `/api/v1/whatsapp/events` | Webhook de YCloud para el WhatsApp de Marco con el coordinador de WhatsApp. Exige la cabecera `YCloud-Signature`: si falta, no coincide o tiene más de 5 minutos responde `401`; sin secreto o sin base de datos responde `503` para que YCloud reintente. En los demás casos responde `200` sin esperar la respuesta del asistente |
 
 ### Archivos adjuntos en Google Chat
@@ -129,7 +130,7 @@ El número está conectado a YCloud en modo coexistencia: la app de WhatsApp Bus
 - **Respuestas del asistente al derivar, encargar o consultar:** las redacta con sus propias palabras. Las tools le dan el criterio (sin prometer plazos ni confirmar lo que Marco debe decidir) y nunca una frase para copiar.
 - **Familia:** los números de `whatsapp_family_phones` reciben el trato de `whatsapp_family_instructions` y pueden pedir cualquier encargo, sin la lista de aceptables. Las reglas de seguridad del prompt y la derivación son las mismas para todos. El resto de los contactos recibe trato profesional.
 - **Aviso:** un solo mensaje por turno en `whatsapp_notify_space`, con el nombre de perfil del contacto (o «Sin nombre»), «(familia)» si corresponde, su número y el enlace `https://wa.me/<número sin +>`. Si hubo derivación trae los motivos y un resumen de la conversación redactado por Gemini (o «No se pudo resumir la conversación.»); si hubo consultas, las preguntas («Te consulta:»); si hubo encargos, la lista. Siempre termina con «Responde en este hilo para contestarle por WhatsApp.». Si falla, se intenta 3 veces, con esperas de 1 y 2 segundos. Si no se publica, no hay pausa y queda en el log con el número del contacto, sin el contenido. Si Marco escribe mientras el asistente prepara la respuesta, no hay respuesta ni aviso. Si YCloud rechaza la respuesta, el aviso se publica igual.
-- **Responder desde Google Chat:** lo que Marco escribe **en el hilo** de un aviso (con «Responder en hilo», no citando el mensaje) le llega al contacto por WhatsApp. Gemini lo redacta en el tono de la conversación (familiar o profesional) sin agregar ni quitar datos, y el hilo responde con el texto enviado. Cada mensaje en el hilo se envía por separado, queda en el historial como mensaje de Marco y levanta la pausa del chat, así que el asistente vuelve a atenderlo. Lo que Marco escribe fuera de los hilos de avisos sigue yendo al «Agente Interno».
+- **Responder desde Google Chat:** lo que Marco escribe **en el hilo** de un aviso (con «Responder en hilo», no citando el mensaje) le llega al contacto por WhatsApp. Gemini lo redacta en el tono de la conversación (familiar o profesional) sin agregar ni quitar datos, y el hilo responde con el texto enviado. Cada mensaje en el hilo se envía por separado, queda en el historial como mensaje de Marco y levanta la pausa del chat, así que el asistente vuelve a atenderlo. Lo que Marco escribe fuera de los hilos de avisos sigue yendo al «Agente Interno». Si el aviso traía consultas, después de enviar la respuesta llega al hilo una propuesta de pregunta frecuente (ver [Agente Interno y conocimiento](#agente-interno-y-conocimiento)).
 - **Ventana de 24 h:** WhatsApp solo deja enviar texto libre por la API hasta 24 h después del último mensaje del contacto. Fuera de esa ventana no se envía nada y el hilo responde con el enlace `wa.me` para escribirle desde el celular. Tampoco se envía si el canal está apagado, si el mensaje no tiene texto o si falla la redacción o YCloud: el hilo lo dice y el log no guarda el texto. Los avisos publicados antes de la 3.7.0 no aceptan respuestas.
 - **Fallos:** si el LLM, la base de datos o YCloud fallan, o se supera `whatsapp_timeout`, el contacto no recibe nada y queda en el log sin el contenido del mensaje. Marco responde desde su celular.
 - **Conexiones salientes:** las llamadas a YCloud y a Google salen solo por IPv4, porque el cluster no tiene ruta IPv6, y reintentan la conexión hasta 2 veces si no logran conectar. Una petición que ya se envió no se repite, así que no se duplican mensajes.
@@ -195,6 +196,58 @@ Para activar el canal:
 
 Para apagarlo, `whatsapp_enabled = false`: aplica desde el siguiente evento.
 
+### Agente Interno y conocimiento
+
+Lo que Marco escribe en Google Chat fuera de los hilos de avisos lo atiende el «Agente Interno». Su área `interno` «Conocimiento» tiene un sub-agente que administra las preguntas frecuentes de las áreas `externo`, las mismas que usan el chat web y el «Agente WhatsApp».
+
+- **Qué puede hacer:**
+  - listar las áreas con sus categorías y cuántas preguntas tiene cada una (`ver_conocimiento`);
+  - buscar preguntas por similitud, con su id (`buscar_conocimiento`);
+  - proponer crear, editar o borrar una pregunta, o crear una categoría (`proponer_cambio`).
+
+  No crea ni borra áreas, no cambia prompts y no renombra ni borra categorías.
+- **Solo desde el space de aviso:** el conocimiento se ve y se cambia únicamente en `whatsapp_notify_space`, el mensaje directo de Marco con la app.
+  - En otros spaces, el «Agente Interno» responde sin el área «Conocimiento».
+  - Si falta la property, el conocimiento no está disponible en ningún space.
+  - Un clic en una tarjeta fuera del space de aviso no cambia nada.
+- **Confirmación con tarjeta:** nada se escribe al pedirlo.
+  - La respuesta trae una tarjeta por cada cambio, con el área, la categoría, la pregunta y la respuesta; al editar muestra también la versión actual y al borrar, la pregunta que se borra.
+  - «Confirmar» aplica el cambio y «Cancelar» lo descarta. Las tarjetas también llegan en la respuesta diferida.
+  - Al confirmar se genera el embedding, así que la pregunta se usa desde la siguiente consulta, sin `src.rag.reindex`. Si falla el embedding no se aplica nada y la tarjeta conserva los botones para reintentar.
+  - Si la pregunta ya existe en la categoría, o si la pregunta frecuente cambió o se borró desde que se propuso, no se aplica nada y la tarjeta lo dice.
+  - Una tarjeta ya resuelta solo muestra su estado, aunque se presione dos veces.
+- **Propuestas desde una consulta:** después de enviar al contacto lo que Marco responde en el hilo de un aviso con consultas, Gemini redacta una pregunta frecuente con las preguntas del aviso y la respuesta de Marco, y la publica en el mismo hilo con «Guardar» y «Descartar».
+  - No propone nada si la respuesta es personal o puntual, si ya hay una pregunta frecuente que la responde, o en hilos de derivaciones o encargos.
+  - Gemini no recibe el nombre ni el número del contacto, y un borrador que los trae se descarta.
+  - Para corregir una propuesta, se descarta y se le pide la pregunta al «Agente Interno» fuera del hilo.
+  - Los avisos publicados antes de la 3.8.0 no generan propuestas.
+- **Fallos:** si la propuesta o un cambio fallan, el log guarda solo el tipo de error, nunca la pregunta ni la respuesta. El mensaje al contacto y la confirmación en el hilo no cambian.
+
+Para activarlo, cargar el «Agente Interno», el área «Conocimiento» y su sub-agente. Usa `whatsapp_notify_space` (paso 5 de WhatsApp) y `google_chat_audience`, que ya existen.
+
+```sql
+INSERT INTO agents (name, prompt) VALUES ('Agente Interno',
+  'Eres el asistente interno de Marco Figueroa en Google Chat. Responde en español, breve y directo. Usa delegar_area '
+  'con el área que corresponda. Para ver o cambiar las preguntas frecuentes del chat web y del WhatsApp, delega en el '
+  'área Conocimiento. Los cambios se confirman con la tarjeta que acompaña tu respuesta: nunca digas que un cambio '
+  'está hecho. Si el área Conocimiento no está entre tus áreas, explica que el conocimiento solo se administra desde '
+  'el mensaje directo de avisos.');
+
+INSERT INTO areas (name, description, audiencia) VALUES ('Conocimiento',
+  'Ver, buscar, crear, editar y borrar las preguntas frecuentes que usan el chat web y el WhatsApp', 'interno');
+
+INSERT INTO agents (name, prompt, area_id) SELECT 'Agente Conocimiento',
+  'Administras las preguntas frecuentes de las áreas externo del asistente de Marco. Usa ver_conocimiento para '
+  'listar áreas y categorías y buscar_conocimiento para encontrar preguntas con su id. Para cada cambio que pida '
+  'Marco usa proponer_cambio; antes de editar o borrar, busca la pregunta y usa su id. Redacta preguntas '
+  'autocontenidas y respuestas sin datos personales. Nada se guarda hasta que Marco confirme en la tarjeta: di qué '
+  'propusiste, sin decir que está hecho. Si pide crear o borrar áreas, cambiar prompts o borrar categorías, dile que '
+  'no puedes.', id
+FROM areas WHERE name = 'Conocimiento';
+```
+
+Si «Conocimiento» es la única área `interno`, fuera del space de aviso el «Agente Interno» responde solo con su prompt.
+
 ## Base de datos
 
 | Tabla | Qué contiene |
@@ -208,7 +261,8 @@ Para apagarlo, `whatsapp_enabled = false`: aplica desde el siguiente evento.
 | `whatsapp_conversations` | Una fila por contacto de WhatsApp: su nombre de perfil, cuándo escribió por última vez (para la ventana de 24 h), hasta cuándo está en pausa, cuándo vence la espera del lote, qué proceso lo responde y un contador (`epoch`) que sube con cada mensaje de Marco |
 | `whatsapp_messages` | Cola de mensajes de WhatsApp pendientes de responder o de pasar al historial. Las filas se borran cuando quedan en el historial del checkpointer |
 | `whatsapp_events` | Ids de los eventos de YCloud ya recibidos, para descartar reintentos. Se borran a los 7 días |
-| `whatsapp_notices` | Hilo de Google Chat de cada aviso de WhatsApp y el contacto al que pertenece, para enviarle lo que Marco responde en ese hilo. Se borran junto con la conversación |
+| `whatsapp_notices` | Hilo de Google Chat de cada aviso de WhatsApp, el contacto al que pertenece y sus preguntas de «Te consulta» (`questions`, una por línea), para enviarle lo que Marco responde en ese hilo y proponer una pregunta frecuente. Se borran junto con la conversación |
+| `knowledge_proposals` | Cambios del conocimiento que esperan el botón de su tarjeta: acción (`create`, `update`, `delete`, `category`), origen (`interno` o `consulta`), la pregunta propuesta, la versión anterior y el estado (`pending`, `applied`, `discarded`, `rejected`). Las resueltas quedan como registro |
 
 ### Orígenes CORS
 
