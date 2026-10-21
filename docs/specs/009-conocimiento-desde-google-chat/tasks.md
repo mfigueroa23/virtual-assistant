@@ -105,7 +105,7 @@ T02 ─────────────────────────�
 
 ## Fase 2 — Sub-agente de conocimiento
 
-- [ ] **T06 — Grafo, tools y exclusión del sub-agente de conocimiento**
+- [x] **T06 — Grafo, tools y exclusión del sub-agente de conocimiento**
   - **RF:** RF-01 a RF-10
   - **Depende de:** T04
   - **Alcance:**

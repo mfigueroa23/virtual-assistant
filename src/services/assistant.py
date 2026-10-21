@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from uuid import uuid4
 from langchain_core.messages import AnyMessage, HumanMessage
 from langgraph.graph import MessagesState
@@ -17,7 +17,9 @@ async def run_turn(
   thread_id: str,
   mensaje: str,
   previous: Sequence[AnyMessage] = (),
-  instructions: str = ""
+  instructions: str = "",
+  turn_id: str | None = None,
+  exclude: Collection[str] = ()
 ) -> list[AnyMessage]:
   """Ejecuta un turno y devuelve solo sus mensajes: llamadas a tools, sus resultados y la respuesta final (D3)."""
   llm = await LLM.create(session)
@@ -25,8 +27,10 @@ async def run_turn(
   sub_agents = await list_sub_agents(session, audiencia = audiencia)
   if not sub_agents:
     raise AgentNotFoundError(f"sub-agentes de la audiencia '{audiencia}'")
+  # Las áreas excluidas no se ofrecen; el turno sigue aunque no quede ninguna (D5 del plan 009).
+  available = [sub_agent for sub_agent in sub_agents if sub_agent.area not in exclude]
   # Un id propio marca dónde empieza el turno dentro del historial completo que devuelve el grafo.
-  turn = HumanMessage(mensaje, id = str(uuid4()))
+  turn = HumanMessage(mensaje, id = turn_id or str(uuid4()))
   result = await graph.ainvoke(
     # previous son mensajes ya ocurridos que aún no están en el historial, como los de WhatsApp durante la pausa (D4).
     { "messages": [*previous, turn] },
@@ -36,8 +40,9 @@ async def run_turn(
       system_prompt = prompt,
       embeddings = llm.embeddings,
       audiencia = audiencia,
-      sub_agents = { sub_agent.area: sub_agent for sub_agent in sub_agents },
-      instructions = instructions
+      sub_agents = { sub_agent.area: sub_agent for sub_agent in available },
+      instructions = instructions,
+      turn_id = str(turn.id)
     )
   )
   messages: list[AnyMessage] = result["messages"]

@@ -1,7 +1,8 @@
 from langchain.tools import ToolRuntime, tool
 from langchain_core.messages import HumanMessage
 from src.agents.context import AgentContext, CoordinatorContext
-from src.agents.graph import sub_agent_graph
+from src.agents.graph import knowledge_graph, sub_agent_graph
+from src.services.knowledge import CONOCIMIENTO
 
 @tool(parse_docstring=True)
 async def delegar_area(area: str, consulta: str, runtime: ToolRuntime[CoordinatorContext]) -> str:
@@ -15,14 +16,17 @@ async def delegar_area(area: str, consulta: str, runtime: ToolRuntime[Coordinato
   sub_agent = context.sub_agents.get(area)
   if sub_agent is None:
     return f"El área '{area}' no existe. Áreas disponibles: {', '.join(context.sub_agents)}."
-  result = await sub_agent_graph.ainvoke(
+  # Solo el área interno «Conocimiento» usa el grafo con las tools de escritura (D3, D4 del plan 009).
+  is_knowledge = context.audiencia == "interno" and sub_agent.area == CONOCIMIENTO
+  result = await (knowledge_graph if is_knowledge else sub_agent_graph).ainvoke(
     { "messages": [HumanMessage(consulta)] },
     context = AgentContext(
       llm = context.llm,
       system_prompt = sub_agent.prompt,
       embeddings = context.embeddings,
       area = sub_agent.area,
-      audiencia = context.audiencia
+      audiencia = context.audiencia,
+      turn_id = context.turn_id
     )
   )
   return result["messages"][-1].text

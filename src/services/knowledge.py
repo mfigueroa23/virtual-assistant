@@ -14,6 +14,8 @@ from src.utils.exceptions.database import DatabaseUnavailableError
 
 # El conocimiento que se administra es el de los clientes y contactos: las áreas externo (RF-01).
 AUDIENCIA = "externo"
+# Área interno del sub-agente que administra el conocimiento (D3 del plan 009).
+CONOCIMIENTO = "Conocimiento"
 
 Action = Literal["create", "update", "delete", "category"]
 Origin = Literal["interno", "consulta"]
