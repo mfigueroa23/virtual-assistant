@@ -18,6 +18,8 @@ class WhatsappConversation(Base):
   processing_since: Mapped[datetime | None] = mapped_column(DateTime(timezone = True))
   # Sube con cada mensaje de Marco: si cambió durante el lote, la respuesta se descarta (D6).
   epoch: Mapped[int] = mapped_column(Integer, server_default = "0")
+  # Nombre de perfil de WhatsApp del contacto, para el aviso a Marco; se actualiza con cada mensaje entrante.
+  contact_name: Mapped[str | None] = mapped_column(String(255))
 
 class WhatsappMessage(Base):
   __tablename__ = "whatsapp_messages"
