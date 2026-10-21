@@ -12,6 +12,7 @@ from src.services.google_chat import (
 from src.services.google_chat_reply import NO_DISPONIBLE, answer, read_thresholds
 from src.services.http import outbound_client
 from src.services.property import get_property
+from src.services.whatsapp_relay import relay_reply
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 from src.utils.exceptions.property import PropertyNotFoundError
@@ -43,6 +44,10 @@ async def google_chat_events(
       return chat_reply(await get_property(session, "google_chat_welcome"))
     if not conversation_key(event) or not (message_text(event) or attachments_of(event)):
       return {}
+    # Una respuesta en el hilo de un aviso de WhatsApp va al contacto; el resto sigue al Agente Interno (D9 del plan 008).
+    relayed = await relay_reply(request.app.state.whatsapp_graph, session, event)
+    if relayed is not None:
+      return chat_reply(relayed)
     notice, maximum = await read_thresholds(session)
     # answer decide entre responder en el hilo o avisar y publicar después un mensaje nuevo.
     return await answer(request.app.state.graph, event, notice, maximum)

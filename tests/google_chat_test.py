@@ -39,6 +39,16 @@ def dm_event() -> dict:
         "message": {"text": "¿cómo pago?", "thread": {"name": "spaces/DM1/threads/X9"}}}}}
 
 
+@pytest.fixture(autouse=True)
+def no_relay(monkeypatch):
+    """Por defecto ningún mensaje es respuesta a un aviso de WhatsApp: el endpoint sigue con el Agente Interno."""
+    async def fake_relay(graph, session, event):
+        return None
+
+    monkeypatch.setattr(google_chat_router, "relay_reply", fake_relay)
+    monkeypatch.setattr(app.state, "whatsapp_graph", object(), raising=False)
+
+
 @pytest.fixture
 def claims(monkeypatch):
     """Simula la decodificación del ID token: los tests no descargan certificados de Google."""
@@ -152,6 +162,52 @@ def test_endpoint_delega_en_answer_y_devuelve_su_respuesta(monkeypatch):
     assert response.status_code == 200
     assert response.json() == {"respuesta": "de answer"}
     assert calls == [(10.0, 120.0)]
+
+
+def relay_endpoint(monkeypatch, relayed: str | None) -> dict[str, list]:
+    """Endpoint con el token, los umbrales, answer y relay_reply reemplazados."""
+    calls: dict[str, list] = {"relay": [], "answer": []}
+
+    async def fake_verify_token(session, credentials):
+        return None
+
+    async def fake_read_thresholds(session):
+        return 10.0, 120.0
+
+    async def fake_relay(graph, session, event):
+        calls["relay"].append(graph)
+        return relayed
+
+    async def fake_answer(graph, event, notice, maximum):
+        calls["answer"].append(graph)
+        return {"respuesta": "del Agente Interno"}
+
+    monkeypatch.setattr(google_chat_router, "verify_token", fake_verify_token)
+    monkeypatch.setattr(google_chat_router, "read_thresholds", fake_read_thresholds)
+    monkeypatch.setattr(google_chat_router, "relay_reply", fake_relay)
+    monkeypatch.setattr(google_chat_router, "answer", fake_answer)
+    monkeypatch.setattr(app.state, "graph", object(), raising=False)
+    monkeypatch.setattr(app.state, "whatsapp_graph", object(), raising=False)
+    return calls
+
+
+def test_e7_respuesta_en_el_hilo_de_un_aviso_va_al_contacto(monkeypatch):
+    calls = relay_endpoint(monkeypatch, "Enviado a Sara:\n¡Sí!")
+
+    response = TestClient(app).post("/api/v1/google-chat/events", json=dm_event())
+
+    assert response.status_code == 200
+    assert response.json() == chat_reply("Enviado a Sara:\n¡Sí!")
+    assert calls["relay"] == [app.state.whatsapp_graph] and calls["answer"] == []
+
+
+def test_e8_mensaje_fuera_de_un_aviso_va_al_agente_interno(monkeypatch):
+    calls = relay_endpoint(monkeypatch, None)
+
+    response = TestClient(app).post("/api/v1/google-chat/events", json=dm_event())
+
+    assert response.json() == {"respuesta": "del Agente Interno"}
+    assert calls["answer"] == [app.state.graph]
 
 
 def test_endpoint_responde_el_aviso_redactado_por_el_llm(monkeypatch):

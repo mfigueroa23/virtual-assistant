@@ -49,11 +49,17 @@ async def read_lines(session: AsyncSession, key: str) -> list[str]:
 def bullets(items: Sequence[str]) -> str:
   return "\n".join(f"- {item}" for item in items)
 
+async def family_tone(session: AsyncSession, phone: str) -> str | None:
+  """Trato familiar del contacto, o None si no es familiar; lo usan el turno y la respuesta desde Google Chat."""
+  if not is_family(phone, await read_lines(session, "whatsapp_family_phones")):
+    return None
+  return "\n".join(["Este contacto es de la familia de Marco.", *await read_lines(session, "whatsapp_family_instructions")])
+
 async def turn_instructions(session: AsyncSession, phone: str) -> tuple[str, bool]:
   """Instrucciones que se suman al prompt del turno y si el contacto es familiar; sin caché (D14, D17)."""
-  if is_family(phone, await read_lines(session, "whatsapp_family_phones")):
+  trato = await family_tone(session, phone)
+  if trato is not None:
     # Las reglas de seguridad del prompt siguen valiendo: solo cambian el tono y los encargos.
-    trato = "\n".join(["Este contacto es de la familia de Marco.", *await read_lines(session, "whatsapp_family_instructions")])
     return f"{trato}\n\n{CUALQUIER_ENCARGO}", True
   tasks = await read_lines(session, "whatsapp_accepted_tasks")
   if not tasks:

@@ -28,7 +28,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
   - **Hecho cuando:** `spec.md` y `plan.md` muestran `Status: Approved` y `git log` muestra el commit con la spec, el
     plan y las tareas.
 
-- [ ] **T02 — Comprobar los hilos en el mensaje directo con la app**
+- [x] **T02 — Comprobar los hilos en el mensaje directo con la app**
   - **RF:** RF-13
   - **Depende de:** — (puede ir en paralelo con T01)
   - **Alcance:** paso 1 del orden del plan. Marco responde en el hilo del aviso «[PRUEBA]» publicado en
@@ -106,7 +106,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
 
 ## Fase 3 — Respuestas desde el hilo
 
-- [ ] **T08 — Servicio `whatsapp_relay`**
+- [x] **T08 — Servicio `whatsapp_relay`**
   - **RF:** RF-12, RF-13, RF-14, RF-15, RF-16, RF-17, RF-18, RF-19, RF-20, RF-21, RF-22, RF-23, RF-24
   - **Depende de:** T02, T05, T06
   - **Alcance:**
@@ -120,7 +120,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
     - U-C1 a U-C11 pasan con `uv run pytest tests/whatsapp_relay_test.py`;
     - U-D11 a U-D20 siguen pasando.
 
-- [ ] **T09 — Router de Google Chat**
+- [x] **T09 — Router de Google Chat**
   - **RF:** RF-12, RF-13
   - **Depende de:** T07, T08
   - **Alcance:** `src/routers/google_chat.py` llama a `relay_reply(request.app.state.whatsapp_graph, session, event)`
