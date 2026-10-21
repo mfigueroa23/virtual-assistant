@@ -131,7 +131,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
 
 ## Fase 4 — Documentación, calidad y release
 
-- [ ] **T10 — README**
+- [x] **T10 — README**
   - **RF:** —
   - **Depende de:** T09
   - **Alcance:**
@@ -143,7 +143,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
   - **Hecho cuando:** `README.md` contiene `consultar_a_marco`, `whatsapp_notices`, «Responde en este hilo», `24 h` y
     el `UPDATE agents` sin las frases «Déjame revisarlo y te cuento» ni «Ahora no puedo, te escribo en un rato».
 
-- [ ] **T11 — Puerta de calidad**
+- [x] **T11 — Puerta de calidad**
   - **RF:** —
   - **Depende de:** T10
   - **Alcance:** checklist de `AGENTS.md` sobre toda la rama.
