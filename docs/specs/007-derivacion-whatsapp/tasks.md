@@ -129,7 +129,7 @@ T01 ─┬─► T02 ───────────────────�
   - **Hecho cuando:** `uv run pytest` pasa completo (incluidos U-N*, U-D*, U-R*, U-P1, U-H3, U-H4 y E6), `uv run pyright` da
     0 errores, `uv run alembic check` no reporta diferencias y la BD local está en `head`.
 
-- [ ] **T11 — Versión 3.6.0**
+- [x] **T11 — Versión 3.6.0**
   - **RF:** —
   - **Depende de:** T10
   - **Alcance:** `version = "3.6.0"` en `pyproject.toml` y `uv sync`, en un solo commit con `uv.lock`.
