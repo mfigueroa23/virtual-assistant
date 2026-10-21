@@ -172,7 +172,7 @@ T02 ─────────────────────────�
 
 ## Fase 4 — Propuestas desde la consulta
 
-- [ ] **T10 — Proponer una FAQ tras responder en el hilo**
+- [x] **T10 — Proponer una FAQ tras responder en el hilo**
   - **RF:** RF-20 a RF-27
   - **Depende de:** T05, T07
   - **Alcance:** `src/services/faq_learning.py` con:

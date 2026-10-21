@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.context import CoordinatorContext
 from src.agents.llm import LLM
 from src.interfaces.google_chat import AddonEvent
+from src.services.faq_learning import schedule_proposal
 from src.services.google_chat import message_text
 from src.services.http import outbound_client
 from src.services.property import get_property
@@ -65,7 +66,7 @@ async def relay_reply(
   thread = payload.message.thread if payload and payload.message else None
   # Sin hilo de aviso el mensaje sigue al Agente Interno, como hasta ahora (RF-13).
   notice = await find_notice(session, thread.name) if thread else None
-  if notice is None:
+  if thread is None or notice is None:
     return None
   if not await channel_enabled(session):
     return CANAL_APAGADO
@@ -98,4 +99,7 @@ async def relay_reply(
   except Exception as exc:
     # El contacto ya lo recibió: solo falta en el historial y la pausa sigue como estaba.
     logger.error("No se pudo guardar en el historial la respuesta de Marco desde Google Chat: %s", type(exc).__name__)
+  if notice.questions:
+    # Solo las respuestas a consultas proponen una FAQ, con el texto de Marco y no el redactado (RF-20, RF-25 de la spec 009).
+    schedule_proposal(notice, thread.name, reply)
   return f"Enviado a {notice.contact_name or SIN_NOMBRE}:\n{text}"
