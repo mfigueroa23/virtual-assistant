@@ -152,7 +152,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
     - `uv run pyright` da 0 errores;
     - `uv run alembic check` no reporta diferencias y la BD local está en `head`.
 
-- [ ] **T12 — Versión 3.7.0**
+- [x] **T12 — Versión 3.7.0**
   - **RF:** —
   - **Depende de:** T11
   - **Alcance:** `version = "3.7.0"` en `pyproject.toml` y `uv sync`, en un solo commit con `uv.lock`.
