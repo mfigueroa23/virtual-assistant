@@ -178,7 +178,7 @@ async def test_u_h3_run_turn_devuelve_solo_los_mensajes_del_turno(monkeypatch):
     assert isinstance(turn[0], AIMessage) and turn[0].tool_calls[0]["args"] == {"motivo": "Quiere agendar una reunión"}
     assert isinstance(turn[1], ToolMessage) and "Marco recibirá el aviso" in turn[1].text
     assert turn[2].text == "Déjame revisarlo y te escribo"
-    assert model.bound == ["delegar_area", "derivar_a_marco", "registrar_encargo"]
+    assert model.bound == ["delegar_area", "derivar_a_marco", "registrar_encargo", "consultar_a_marco"]
     assert model.prompts[-1].endswith("\n\nNo aceptes encargos") and not model.prompts[0].endswith("No aceptes encargos")
 
 
@@ -292,6 +292,8 @@ class FakeStore:
         self.events: set[str] = set()
         self.conversations: dict[str, SimpleNamespace] = {}
         self.messages: dict[str, tuple[str, str, QueuedMessage]] = {}
+        # Hilo del aviso → teléfono del contacto.
+        self.notices: dict[str, str] = {}
 
     def conversation(self, phone: str, business_phone: str = NEGOCIO) -> SimpleNamespace:
         return self.conversations.setdefault(phone, SimpleNamespace(
@@ -361,6 +363,9 @@ class FakeStore:
         conversation = self.conversations[phone]
         conversation.paused_until = whatsapp.next_pause(conversation.paused_until, now, window)
 
+    async def save_notice(self, session, thread, phone):
+        self.notices.setdefault(thread, phone)
+
     async def add_marco_reply(self, session, phone, message):
         conversation = self.conversations[phone]
         conversation.paused_until = None
@@ -394,7 +399,7 @@ class FakeStore:
 
 FAST = WhatsappSettings(pause = timedelta(hours = 12), grouping = 0.05, maximum = 1.0)
 STORE_FUNCTIONS = ["read_settings", "register_event", "add_inbound", "add_echo", "claim_batch", "pause_conversation",
-                   "current_epoch", "finish_batch", "defer_batch", "pending_phones", "defer_conversation"]
+                   "save_notice", "current_epoch", "finish_batch", "defer_batch", "pending_phones", "defer_conversation"]
 
 
 @pytest.fixture
@@ -741,7 +746,7 @@ def test_u_r1_solo_el_grafo_de_whatsapp_puede_derivar_y_registrar_encargos():
         return sorted(builder.nodes["tools"].runnable.tools_by_name)
 
     assert tools(coordinator_builder) == ["delegar_area"]
-    assert tools(whatsapp_coordinator_builder) == ["delegar_area", "derivar_a_marco", "registrar_encargo"]
+    assert tools(whatsapp_coordinator_builder) == ["consultar_a_marco", "delegar_area", "derivar_a_marco", "registrar_encargo"]
     # El subagente sigue solo consultando.
     assert [tool.name for tool in nodes.TOOLS] == ["search_faq"]
 
@@ -1042,6 +1047,73 @@ async def test_u_r20_respuesta_de_marco_desde_el_hilo_reanuda_y_entra_al_histori
     previous = channel.turn.calls[0]["previous"]
     assert [(type(message).__name__, message.text) for message in previous] == [
         ("AIMessage", "Sí, trabajé dos años con Kafka")]
+
+
+def consultar(pregunta: str = "¿Trabajaste con Kafka?", call_id: str = "call-q") -> AIMessage:
+    return tool_call("consultar_a_marco", call_id, pregunta = pregunta)
+
+
+@pytest.mark.anyio
+async def test_u_r16_consultar_avisa_guarda_el_hilo_y_no_pausa(channel):
+    channel.turn.reply = "Buena pregunta, lo confirmo y te cuento"
+    channel.turn.actions = [consultar()]
+    await receive(text("in-1", "¿Trabajaste con Kafka?"))
+    await drain()
+
+    assert channel.ycloud.sent == [(NEGOCIO, CONTACTO, "Buena pregunta, lo confirmo y te cuento")]
+    assert len(channel.handoff.published) == 1
+    assert "¿Trabajaste con Kafka?" in channel.handoff.published[0]
+    assert channel.store.notices == {"spaces/AAA/threads/t1": CONTACTO}
+    assert channel.store.conversations[CONTACTO].paused_until is None
+
+
+@pytest.mark.anyio
+async def test_u_r17_consulta_y_derivacion_dan_un_solo_aviso_y_pausa(channel):
+    channel.turn.actions = [consultar(), derivar()]
+    await receive(text("in-1", "¿Sabes Kafka? ¿Nos juntamos?"))
+    await drain()
+
+    assert len(channel.handoff.published) == 1
+    assert "¿Trabajaste con Kafka?" in channel.handoff.published[0]
+    assert "Quiere agendar una reunión" in channel.handoff.published[0]
+    assert channel.store.conversations[CONTACTO].paused_until is not None
+
+
+@pytest.mark.anyio
+async def test_u_r18_echo_durante_un_turno_con_consulta_no_envia_ni_avisa(channel):
+    channel.turn.actions = [consultar()]
+    channel.turn.release = asyncio.Event()
+    await receive(text("in-1", "¿Sabes Kafka?"))
+    await asyncio.wait_for(channel.turn.started.wait(), 1)
+    await receive(echo())
+    channel.turn.release.set()
+    await drain()
+
+    assert channel.ycloud.sent == [] and channel.handoff.published == [] and channel.store.notices == {}
+
+
+@pytest.mark.anyio
+async def test_u_r19_aviso_de_consulta_fallido_queda_en_el_log_sin_la_pregunta(channel, caplog):
+    channel.turn.actions = [consultar()]
+    channel.handoff.publish_result = False
+    with caplog.at_level(logging.ERROR, logger = "src.services.whatsapp_reply"):
+        await receive(text("in-1", "¿Sabes Kafka?"))
+        await drain()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(CONTACTO in message for message in messages)
+    assert all("Kafka" not in message for message in messages)
+    assert channel.store.notices == {}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("action", [derivar, encargar])
+async def test_u_r21_los_avisos_de_derivacion_y_encargo_tambien_guardan_su_hilo(channel, action):
+    channel.turn.actions = [action()]
+    await receive(text("in-1", "Hola"))
+    await drain()
+
+    assert channel.store.notices == {"spaces/AAA/threads/t1": CONTACTO}
 
 # --- T09: medios y mensajes no soportados ---
 

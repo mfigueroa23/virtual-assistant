@@ -6,11 +6,11 @@ from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.runtime import Runtime
 from src.agents.context import CoordinatorContext
 from src.agents.tools.delegate import delegar_area
-from src.agents.tools.handoff import derivar_a_marco, registrar_encargo
+from src.agents.tools.handoff import consultar_a_marco, derivar_a_marco, registrar_encargo
 
 TOOLS = [delegar_area]
-# Solo WhatsApp puede derivar a Marco y registrar encargos: el chat web y Google Chat no ven estas acciones (D1).
-WHATSAPP_TOOLS = [delegar_area, derivar_a_marco, registrar_encargo]
+# Solo WhatsApp puede derivar, registrar encargos y consultar a Marco: el chat web y Google Chat no ven estas acciones (D1).
+WHATSAPP_TOOLS = [delegar_area, derivar_a_marco, registrar_encargo, consultar_a_marco]
 
 def build_prompt(context: CoordinatorContext) -> str:
   areas = "\n".join(f"- {sub_agent.area}: {sub_agent.description}" for sub_agent in context.sub_agents.values())

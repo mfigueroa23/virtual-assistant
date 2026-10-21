@@ -4,9 +4,12 @@ from typing import Any, cast
 import httpx
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from src.agents import coordinator
+from src.agents.tools import handoff
 from src.services import whatsapp_handoff
 from src.services.whatsapp_handoff import (
-  derivations_of, digits, is_family, notice_text, publish_notice, summarize, tasks_of, transcript, turn_instructions
+  derivations_of, digits, is_family, notice_text, publish_notice, questions_of, summarize, tasks_of, transcript,
+  turn_instructions
 )
 from src.utils.exceptions.property import PropertyNotFoundError
 
@@ -315,3 +318,57 @@ async def test_aviso_publicado_sin_hilo_cuenta_como_publicado(monkeypatch):
 
     assert await publish_notice(SESSION, "aviso") == ""
     assert len(chat.attempts) == 1
+
+
+
+# --- Spec 008: consultas, guías sin frases y respuesta desde el hilo ---
+
+def test_u_q1_solo_whatsapp_puede_consultar_a_marco():
+    assert [tool.name for tool in coordinator.WHATSAPP_TOOLS] == [
+        "delegar_area", "derivar_a_marco", "registrar_encargo", "consultar_a_marco"]
+    assert [tool.name for tool in coordinator.TOOLS] == ["delegar_area"]
+
+
+def test_u_q2_aviso_de_consulta_con_la_pregunta_y_sin_resumen():
+    turn = [calls(("consultar_a_marco", "pregunta", "¿Trabajaste con Kafka?"), ("consultar_a_marco", "pregunta", "¿Trabajaste con Kafka?")),
+            calls(("consultar_a_marco", "pregunta", "¿Tienes disponibilidad en enero?"))]
+
+    questions = questions_of(turn)
+    text = notice_text("Mamá", CONTACTO, [], None, [], True, questions)
+
+    assert questions == ["¿Trabajaste con Kafka?", "¿Tienes disponibilidad en enero?"]
+    for part in ["Mamá", "(familia)", CONTACTO, "https://wa.me/56911111111", "Te consulta:",
+                 "- ¿Trabajaste con Kafka?\n- ¿Tienes disponibilidad en enero?"]:
+        assert part in text
+    assert "Resumen" not in text and "No se pudo resumir" not in text
+
+
+def test_u_q3_consulta_derivacion_y_encargo_en_un_solo_aviso():
+    text = notice_text("Sara", CONTACTO, ["Reunión"], "Busca un desarrollador.", ["Enviar el CV"], False, ["¿Sabes Go?"])
+
+    assert text.index("Reunión") < text.index("Te consulta:") < text.index("Encargos")
+    assert text.count("https://wa.me/") == 1
+
+
+def test_u_q4_las_guias_dan_el_criterio_sin_frases_para_copiar():
+    for guide in [handoff.GUIA_DERIVACION, handoff.GUIA_ENCARGO, handoff.GUIA_CONSULTA]:
+        assert not any(quote in guide for quote in ["«", "»", '"', "“", "”"])
+        assert "tus propias palabras" in guide and "sin prometer plazos" in guide
+
+
+def test_u_q5_lo_desconocido_se_consulta_y_no_se_deriva():
+    assert "información disponible" not in handoff.derivar_a_marco.description
+    assert "información disponible" in handoff.consultar_a_marco.description
+
+
+@pytest.mark.parametrize("args", [
+    (["Reunión"], "Resumen", [], []),
+    ([], None, ["Enviar el CV"], []),
+    ([], None, [], ["¿Sabes Go?"]),
+])
+def test_u_q6_todo_aviso_indica_que_se_responde_en_el_hilo(args):
+    motivos, summary, tasks, questions = args
+
+    text = notice_text("Sara", CONTACTO, motivos, summary, tasks, False, questions)
+
+    assert text.endswith(whatsapp_handoff.RESPONDER)

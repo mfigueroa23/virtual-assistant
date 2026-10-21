@@ -77,7 +77,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
 
 ## Fase 2 — Consultas y respuesta natural
 
-- [ ] **T06 — Tool `consultar_a_marco`, guías sin frases y aviso con la línea de respuesta**
+- [x] **T06 — Tool `consultar_a_marco`, guías sin frases y aviso con la línea de respuesta**
   - **RF:** RF-01, RF-02, RF-04, RF-06, RF-09, RF-10, RF-11
   - **Depende de:** T01 (puede ir en paralelo con T03 y T04)
   - **Alcance:**
@@ -93,7 +93,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
     - U-Q1 a U-Q6 pasan con `uv run pytest tests/whatsapp_handoff_test.py tests/whatsapp_reply_test.py`;
     - U-D1 a U-D21 siguen pasando.
 
-- [ ] **T07 — Consultas en el canal WhatsApp y hilos guardados**
+- [x] **T07 — Consultas en el canal WhatsApp y hilos guardados**
   - **RF:** RF-03, RF-04, RF-05, RF-06, RF-07, RF-08, RF-18
   - **Depende de:** T04, T05, T06
   - **Alcance:**
