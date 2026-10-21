@@ -17,3 +17,5 @@ class CoordinatorContext:
   embeddings: GoogleGenerativeAIEmbeddings
   audiencia: str
   sub_agents: dict[str, SubAgentConfig]
+  # Instrucciones del turno que se suman al final del prompt del coordinador.
+  instructions: str = ""

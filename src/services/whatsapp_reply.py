@@ -13,12 +13,16 @@ from src.agents.context import CoordinatorContext
 from src.agents.llm import LLM
 from src.database.session import SessionLocal
 from src.interfaces.whatsapp import MessageContent, WhatsappEvent, WhatsappMessage
-from src.services.assistant import ask
+from src.services.assistant import run_turn
 from src.services.attachments import MAX_BYTES, Attachment, read_attachments, transcribe_audio
+from src.services.http import outbound_client
 from src.services.property import get_property
 from src.services.whatsapp import (
   Batch, QueuedMessage, Wait, WhatsappSettings, add_echo, add_inbound, claim_batch, current_epoch, defer_batch,
-  defer_conversation, finish_batch, pending_phones, read_settings, register_event
+  defer_conversation, finish_batch, pause_conversation, pending_phones, read_settings, register_event
+)
+from src.services.whatsapp_handoff import (
+  derivations_of, notice_text, publish_notice, summarize, tasks_of, transcript, turn_instructions
 )
 from src.services.ycloud import download_media, mark_as_read, send_text, split_text
 from src.utils.exceptions.agents import AgentNotFoundError
@@ -102,7 +106,10 @@ async def handle_event(graph: CompiledStateGraph[MessagesState, CoordinatorConte
   outbound = event.whatsapp_message
   if event.type == ENTRANTE and inbound is not None and not inbound.group_id:
     settings = await read_settings(session)
-    queue = await add_inbound(session, inbound.from_, inbound.to, to_queued(inbound, "inbound", now), now, settings.grouping)
+    name = inbound.customer_profile.name if inbound.customer_profile else None
+    queue = await add_inbound(
+      session, inbound.from_, inbound.to, to_queued(inbound, "inbound", now), now, settings.grouping, name
+    )
     await session.commit()
     if queue:
       schedule(graph, inbound.from_)
@@ -169,9 +176,16 @@ async def build_text(session: AsyncSession, batch: Batch, api_key: str, http: ht
 
   return "\n\n".join(await asyncio.gather(*(line(message) for message in batch.messages)))
 
+def thread_config(phone: str) -> RunnableConfig:
+  return { "configurable": { "thread_id": thread_key(phone) } }
+
+async def conversation_of(graph: CompiledStateGraph[MessagesState, CoordinatorContext], phone: str) -> list[AnyMessage]:
+  state = await graph.aget_state(thread_config(phone))
+  return state.values.get("messages", [])
+
 async def forget_answer(graph: CompiledStateGraph[MessagesState, CoordinatorContext], phone: str) -> None:
   """Quita del historial la última respuesta del asistente porque el contacto nunca la recibió (D5)."""
-  config: RunnableConfig = { "configurable": { "thread_id": thread_key(phone) } }
+  config = thread_config(phone)
   state = await graph.aget_state(config)
   messages = state.values.get("messages", [])
   if messages and isinstance(messages[-1], AIMessage) and messages[-1].id:
@@ -185,6 +199,36 @@ async def release(batch: Batch, ids: list[str]) -> None:
     # Si no se libera, el lote se da por caído al pasar el tiempo máximo más el margen (D3).
     logger.error("No se pudo liberar el lote de WhatsApp: %s", type(exc).__name__)
 
+async def summary_of(graph: CompiledStateGraph[MessagesState, CoordinatorContext], session: AsyncSession, phone: str) -> str | None:
+  # Se resume desde el estado del grafo: la cola ya no tiene las respuestas del asistente (D6).
+  try:
+    llm = await LLM.create(session)
+    messages = await conversation_of(graph, phone)
+  except Exception as exc:
+    logger.warning("No se pudo preparar el resumen de la conversación de WhatsApp: %s", type(exc).__name__)
+    return None
+  return await summarize(llm.llm, transcript(messages))
+
+async def notify(
+  graph: CompiledStateGraph[MessagesState, CoordinatorContext], batch: Batch, motivos: list[str], tasks: list[str],
+  family: bool, settings: WhatsappSettings
+) -> None:
+  """Publica un solo aviso del turno y pausa solo si hubo derivación y el aviso se publicó (D5, D15)."""
+  try:
+    async with SessionLocal() as session:
+      summary = await summary_of(graph, session, batch.phone) if motivos else None
+      text = notice_text(batch.contact_name, batch.phone, motivos, summary, tasks, family)
+      published = await publish_notice(session, text)
+      if published and motivos:
+        # La ventana se cuenta desde el aviso; sin aviso no hay pausa y el asistente sigue respondiendo (RF-05, RF-14).
+        await pause_conversation(session, batch.phone, datetime.now(UTC), settings.pause)
+  except Exception as exc:
+    logger.error("Ha ocurrido un error al avisar a Marco por la conversación de WhatsApp %s: %s", batch.phone, type(exc).__name__)
+    return
+  if not published:
+    # El número sirve para buscar la conversación; el motivo y los encargos no van al log (RF-14, RF-26).
+    logger.error("No se publicó el aviso a Marco por la conversación de WhatsApp %s; no se pausa", batch.phone)
+
 async def answer_batch(graph: CompiledStateGraph[MessagesState, CoordinatorContext], batch: Batch, settings: WhatsappSettings) -> None:
   """Responde el lote como Marco; ante cualquier fallo no envía nada y lo deja en el log, sin el contenido (D12)."""
   ids = [message.id for message in batch.messages + batch.history]
@@ -196,13 +240,17 @@ async def answer_batch(graph: CompiledStateGraph[MessagesState, CoordinatorConte
     except Exception as exc:
       logger.error("No se pudo guardar el lote de WhatsApp para el historial: %s", type(exc).__name__)
     return
-  async with httpx.AsyncClient(timeout = 20) as http:
+  async with outbound_client(20) as http:
     try:
       async with SessionLocal() as session, asyncio.timeout(settings.maximum):
         api_key = await get_property(session, "ycloud_api_key")
         text = await build_text(session, batch, api_key, http)
         previous = [history_message(message) for message in batch.history]
-        respuesta = await ask(graph, session, COORDINADOR, AUDIENCIA, thread_key(batch.phone), text, previous = previous)
+        # Encargos aceptables y trato familiar, leídos en cada turno (D14, D17).
+        instructions, family = await turn_instructions(session, batch.phone)
+        turn = await run_turn(
+          graph, session, COORDINADOR, AUDIENCIA, thread_key(batch.phone), text, previous = previous, instructions = instructions
+        )
     except TimeoutError:
       logger.warning("Se superó el tiempo máximo de %s segundos para responder en WhatsApp", settings.maximum)
       return await release(batch, ids)
@@ -216,30 +264,43 @@ async def answer_batch(graph: CompiledStateGraph[MessagesState, CoordinatorConte
       # Solo el tipo de error: el mensaje de la excepción podría incluir el texto del contacto.
       logger.error("Ha ocurrido un error al responder en WhatsApp: %s", type(exc).__name__)
       return await release(batch, ids)
-    if not respuesta.strip():
+    respuesta = turn[-1].text if turn else ""
+    motivos, tasks = derivations_of(turn), tasks_of(turn)
+    if not respuesta.strip() and not (motivos or tasks):
       logger.warning("El asistente devolvió una respuesta vacía en WhatsApp, no se envía nada")
       return await release(batch, ids)
     try:
       async with SessionLocal() as session:
         epoch = await current_epoch(session, batch.phone)
-      if epoch != batch.epoch:
-        # Marco respondió mientras el asistente preparaba la respuesta: la conversación es suya (RF-25).
-        await forget_answer(graph, batch.phone)
-        return await release(batch, ids)
-      for part in split_text(respuesta):
-        await send_text(api_key, batch.business_phone, batch.phone, part, http)
-    except httpx.HTTPError as exc:
-      logger.error("YCloud no aceptó la respuesta de WhatsApp: %s", type(exc).__name__)
-      await forget_answer(graph, batch.phone)
-      return await release(batch, ids)
     except Exception as exc:
       logger.error("Ha ocurrido un error al enviar la respuesta de WhatsApp: %s", type(exc).__name__)
       return await release(batch, ids)
+    if epoch != batch.epoch:
+      # Marco respondió durante el lote: la conversación es suya y no hay aviso (RF-25 de la spec 006, RF-07).
+      await forget_answer(graph, batch.phone)
+      return await release(batch, ids)
+    sent = False
     try:
-      inbound = [message for message in batch.messages if message.direction == "inbound"]
-      await mark_as_read(api_key, inbound[-1].id, http)
+      if respuesta.strip():
+        for part in split_text(respuesta):
+          await send_text(api_key, batch.business_phone, batch.phone, part, http)
+        sent = True
+      else:
+        logger.warning("El asistente devolvió una respuesta vacía en WhatsApp, solo se avisa a Marco")
+    except httpx.HTTPError as exc:
+      logger.error("YCloud no aceptó la respuesta de WhatsApp: %s", type(exc).__name__)
+      await forget_answer(graph, batch.phone)
     except Exception as exc:
-      logger.warning("No se pudo marcar como leído el mensaje de WhatsApp: %s", type(exc).__name__)
+      logger.error("Ha ocurrido un error al enviar la respuesta de WhatsApp: %s", type(exc).__name__)
+    if motivos or tasks:
+      # Aunque YCloud rechace la respuesta, Marco igual debe enterarse (RF-08).
+      await notify(graph, batch, motivos, tasks, family, settings)
+    if sent:
+      try:
+        inbound = [message for message in batch.messages if message.direction == "inbound"]
+        await mark_as_read(api_key, inbound[-1].id, http)
+      except Exception as exc:
+        logger.warning("No se pudo marcar como leído el mensaje de WhatsApp: %s", type(exc).__name__)
   await release(batch, ids)
 
 async def process_conversation(graph: CompiledStateGraph[MessagesState, CoordinatorContext], phone: str) -> None:

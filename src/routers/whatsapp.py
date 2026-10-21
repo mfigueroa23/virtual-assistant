@@ -44,7 +44,7 @@ async def whatsapp_events(request: Request, session: SessionDep) -> Response:
       logger.warning("Evento de YCloud con un formato no reconocido, se ignora")
       return Response(status_code = status.HTTP_200_OK)
     # Solo guarda y agenda: la respuesta del asistente se envía después, en segundo plano.
-    await handle_event(request.app.state.graph, session, event)
+    await handle_event(request.app.state.whatsapp_graph, session, event)
     return Response(status_code = status.HTTP_200_OK)
   except InvalidSignatureError as exc:
     logger.warning("Evento de YCloud rechazado: %s", exc)

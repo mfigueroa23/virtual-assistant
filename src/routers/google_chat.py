@@ -1,6 +1,5 @@
 import logging
 from typing import Annotated, Any
-import httpx
 import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -11,6 +10,7 @@ from src.services.google_chat import (
   attachments_of, conversation_key, message_text, verify_addon_token
 )
 from src.services.google_chat_reply import NO_DISPONIBLE, answer, read_thresholds
+from src.services.http import outbound_client
 from src.services.property import get_property
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
@@ -27,7 +27,7 @@ async def verify_token(session: AsyncSession, credentials: HTTPAuthorizationCred
   # Sin caché: un cambio en las properties se aplica desde el siguiente evento.
   audience = await get_property(session, "google_chat_audience")
   service_account = await get_property(session, "google_chat_addon_service_account")
-  async with httpx.AsyncClient(timeout = 10) as http:
+  async with outbound_client(10) as http:
     await verify_addon_token(credentials.credentials, audience, service_account, http)
 
 @router.post("/google-chat/events", responses={ 401: { "description": "Token de Google no válido" } })

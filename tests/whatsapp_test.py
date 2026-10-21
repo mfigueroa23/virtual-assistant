@@ -27,6 +27,7 @@ def endpoint(monkeypatch):
     """Endpoint con las properties y handle_event reemplazados: sin BD real ni YCloud."""
     properties = {"ycloud_webhook_secret": SECRET, "whatsapp_enabled": "true"}
     calls: list[str] = []
+    graphs: list[object] = []
     state = {"error": None}
 
     async def fake_get_property(session, key):
@@ -38,11 +39,13 @@ def endpoint(monkeypatch):
         if state["error"] is not None:
             raise state["error"]
         calls.append(event.id)
+        graphs.append(graph)
 
     monkeypatch.setattr(whatsapp_router, "get_property", fake_get_property)
     monkeypatch.setattr(whatsapp_router, "handle_event", fake_handle_event)
     monkeypatch.setattr(app.state, "graph", object(), raising = False)
-    return {"properties": properties, "calls": calls, "state": state}
+    monkeypatch.setattr(app.state, "whatsapp_graph", object(), raising = False)
+    return {"properties": properties, "calls": calls, "graphs": graphs, "state": state}
 
 
 def post(body: bytes, signature: str | None) -> int:
@@ -57,6 +60,14 @@ def test_e1_evento_firmado_responde_200_y_se_procesa(endpoint):
 
     assert post(body, sign(body)) == 200
     assert endpoint["calls"] == ["evt-1"]
+
+
+def test_e6_el_evento_llega_al_grafo_de_whatsapp(endpoint):
+    body = json.dumps(EVENT).encode()
+
+    assert post(body, sign(body)) == 200
+    assert endpoint["graphs"] == [app.state.whatsapp_graph]
+    assert endpoint["graphs"][0] is not app.state.graph
 
 
 @pytest.mark.parametrize("signature", [
