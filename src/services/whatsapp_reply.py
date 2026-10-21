@@ -15,6 +15,7 @@ from src.database.session import SessionLocal
 from src.interfaces.whatsapp import MessageContent, WhatsappEvent, WhatsappMessage
 from src.services.assistant import ask
 from src.services.attachments import MAX_BYTES, Attachment, read_attachments, transcribe_audio
+from src.services.http import outbound_client
 from src.services.property import get_property
 from src.services.whatsapp import (
   Batch, QueuedMessage, Wait, WhatsappSettings, add_echo, add_inbound, claim_batch, current_epoch, defer_batch,
@@ -196,7 +197,7 @@ async def answer_batch(graph: CompiledStateGraph[MessagesState, CoordinatorConte
     except Exception as exc:
       logger.error("No se pudo guardar el lote de WhatsApp para el historial: %s", type(exc).__name__)
     return
-  async with httpx.AsyncClient(timeout = 20) as http:
+  async with outbound_client(20) as http:
     try:
       async with SessionLocal() as session, asyncio.timeout(settings.maximum):
         api_key = await get_property(session, "ycloud_api_key")

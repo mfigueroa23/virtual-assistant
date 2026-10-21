@@ -16,6 +16,7 @@ from src.services.attachments import Attachment, read_attachments
 from src.services.google_chat import (
   attachments_of, chat_token, conversation_key, create_message, download, mention_of, message_text
 )
+from src.services.http import outbound_client
 from src.services.property import get_property
 from src.utils.exceptions.agents import AgentNotFoundError
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -96,7 +97,7 @@ async def draft_notice(event: AddonEvent) -> str:
 
 async def read_files(session: AsyncSession, adjuntos: list[Attachment]) -> str:
   llm = await LLM.create(session)
-  async with httpx.AsyncClient(timeout = 20) as http:
+  async with outbound_client(20) as http:
     # Sin la cuenta de servicio los archivos quedan como "no se pudo leer" y se responde igual el texto.
     token = await chat_token(session, http)
 
@@ -143,7 +144,7 @@ async def deliver(processing: asyncio.Task[str], event: AddonEvent) -> None:
     logger.error("No se pudo publicar la respuesta diferida: el evento no trae el space")
     return
   try:
-    async with SessionLocal() as session, httpx.AsyncClient(timeout = 20) as http:
+    async with SessionLocal() as session, outbound_client(20) as http:
       token = await chat_token(session, http)
       if token is None:
         return

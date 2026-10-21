@@ -30,7 +30,7 @@ T01 ─┬─► T02 ───────────────────�
 
 ## Fase 1 — Cimientos
 
-- [ ] **T02 — Columna `contact_name` y migración**
+- [x] **T02 — Columna `contact_name` y migración**
   - **RF:** RF-10
   - **Depende de:** T01 (puede ir en paralelo con T03 y T05)
   - **Alcance:** `contact_name: Mapped[str | None]` en `WhatsappConversation` (`src/models/whatsapp.py`), con el
@@ -39,7 +39,7 @@ T01 ─┬─► T02 ───────────────────�
   - **Hecho cuando:** `uv run alembic upgrade head`, luego `uv run alembic downgrade -1 && uv run alembic upgrade head`,
     terminan sin error en la BD local; `uv run alembic check` no reporta diferencias y `uv run pyright` da 0 errores.
 
-- [ ] **T03 — Cliente HTTP saliente solo IPv4 con reintentos**
+- [x] **T03 — Cliente HTTP saliente solo IPv4 con reintentos**
   - **RF:** RF-16, RF-17, RF-18
   - **Depende de:** T01 (puede ir en paralelo con T02 y T05)
   - **Alcance:** `outbound_client(timeout)` en `src/services/http.py`, con
@@ -48,7 +48,7 @@ T01 ─┬─► T02 ───────────────────�
     transporte.
   - **Hecho cuando:** U-N1, U-N2, U-N3 y U-N5 pasan con `uv run pytest tests/http_test.py`.
 
-- [ ] **T04 — Usar `outbound_client` en todos los clientes**
+- [x] **T04 — Usar `outbound_client` en todos los clientes**
   - **RF:** RF-16, RF-17
   - **Depende de:** T03
   - **Alcance:** reemplazar `httpx.AsyncClient(timeout = …)` por `outbound_client(…)`, con el mismo timeout, en
