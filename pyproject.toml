@@ -1,6 +1,6 @@
 [project]
 name = "virtual-assistant"
-version = "3.6.0"
+version = "3.7.0"
 license = "Apache-2.0"
 authors = [
     { name = "Marco Antonio Figueroa Sanchez", email = "marcofigueroa23@icloud.com" },
