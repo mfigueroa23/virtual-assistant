@@ -6,7 +6,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection
 from psycopg.rows import DictRow, dict_row
 from psycopg_pool import AsyncConnectionPool
-from src.agents.coordinator import coordinator_builder
+from src.agents.coordinator import coordinator_builder, whatsapp_coordinator_builder
 from src.config import settings
 from src.database.session import engine
 from src.middlewares.cors import DatabaseCORSMiddleware
@@ -34,8 +34,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         checkpointer = AsyncPostgresSaver(pool)
         await checkpointer.setup()
         app.state.graph = coordinator_builder.compile(checkpointer = checkpointer)
+        # WhatsApp tiene su propio grafo con las acciones de derivar y registrar encargos, y el mismo checkpointer.
+        app.state.whatsapp_graph = whatsapp_coordinator_builder.compile(checkpointer = checkpointer)
         # Retoma los lotes de WhatsApp que quedaron sin responder en el despliegue anterior.
-        await whatsapp_reply.recover(app.state.graph)
+        await whatsapp_reply.recover(app.state.whatsapp_graph)
         yield
         # Antes de cerrar el pool: las respuestas diferidas en curso lo usan. Se cancelan y queda en el log cuántas.
         await cancel_pending()

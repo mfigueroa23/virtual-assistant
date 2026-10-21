@@ -98,7 +98,7 @@ T01 ─┬─► T02 ───────────────────�
 
 ## Fase 3 — Integración
 
-- [ ] **T08 — Grafo de WhatsApp en `main.py` y en el router**
+- [x] **T08 — Grafo de WhatsApp en `main.py` y en el router**
   - **RF:** RF-01, RF-02
   - **Depende de:** T07
   - **Alcance:** `main.py` compila `app.state.whatsapp_graph` con `whatsapp_coordinator_builder` y el mismo
