@@ -60,7 +60,7 @@ T01 ─┬─► T02 ───────────────────�
 
 ## Fase 2 — Derivación
 
-- [ ] **T05 — Tools `derivar_a_marco` y `registrar_encargo`, grafo de WhatsApp y `run_turn`**
+- [x] **T05 — Tools `derivar_a_marco` y `registrar_encargo`, grafo de WhatsApp y `run_turn`**
   - **RF:** RF-01, RF-02, RF-03, RF-19, RF-20
   - **Depende de:** T01 (puede ir en paralelo con T02 y T03)
   - **Alcance:**
@@ -71,7 +71,7 @@ T01 ─┬─► T02 ───────────────────�
   - **Hecho cuando:** U-R1, U-P1, U-H3 y U-H4 pasan, y `tests/chat_test.py`, `tests/google_chat_reply_test.py` y
     U-H1/U-H2 siguen pasando.
 
-- [ ] **T06 — Aviso, instrucciones del turno y círculo familiar**
+- [x] **T06 — Aviso, instrucciones del turno y círculo familiar**
   - **RF:** RF-06, RF-10, RF-11, RF-12, RF-13, RF-14, RF-15, RF-20, RF-21, RF-22, RF-24, RF-25, RF-27, RF-28, RF-29,
     RF-30, RF-31, RF-32, RF-33
   - **Depende de:** T03
@@ -85,7 +85,7 @@ T01 ─┬─► T02 ───────────────────�
     - `publish_notice`, que lee `whatsapp_notify_space` en cada llamada y publica con `chat_token` y `create_message`, usando `outbound_client`, en 3 intentos con esperas de 1 y 2 s (D8, D10).
   - **Hecho cuando:** U-D1 a U-D21 pasan con `uv run pytest tests/whatsapp_handoff_test.py`.
 
-- [ ] **T07 — Derivación y encargos en el canal WhatsApp**
+- [x] **T07 — Derivación y encargos en el canal WhatsApp**
   - **RF:** RF-03, RF-04, RF-05, RF-07, RF-08, RF-09, RF-10, RF-14, RF-20, RF-23, RF-24, RF-25, RF-26, RF-28, RF-30,
     RF-33
   - **Depende de:** T02, T04, T05, T06

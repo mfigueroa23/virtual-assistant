@@ -42,9 +42,14 @@ class MessageContent(YCloudModel):
   contacts: list[dict[str, Any]] | None = None
   reaction: Reaction | None = None
 
+class CustomerProfile(BaseModel):
+  # Nombre de perfil que el contacto puso en WhatsApp; puede faltar.
+  name: str | None = None
+
 class InboundMessage(MessageContent):
   # Solo viene en los mensajes de grupo, que no se atienden.
   group_id: str | None = None
+  customer_profile: CustomerProfile | None = None
 
 class WhatsappMessage(MessageContent):
   """Mensaje enviado por el negocio: un echo desde la app o una actualización de estado."""

@@ -51,6 +51,8 @@ class Batch:
   messages: list[QueuedMessage]
   # Mensajes ya ocurridos que se vuelcan al historial antes del turno (D4).
   history: list[QueuedMessage]
+  # Nombre de perfil del contacto, para el aviso a Marco.
+  contact_name: str | None = None
 
 async def read_float(session: AsyncSession, key: str, default: float) -> float:
   try:
@@ -119,12 +121,16 @@ async def save_message(session: AsyncSession, phone: str, message: QueuedMessage
   ).on_conflict_do_nothing())
 
 async def add_inbound(
-  session: AsyncSession, phone: str, business_phone: str, message: QueuedMessage, now: datetime, grouping: float
+  session: AsyncSession, phone: str, business_phone: str, message: QueuedMessage, now: datetime, grouping: float,
+  contact_name: str | None = None
 ) -> bool:
   """Encola el mensaje del contacto; True si hay que agendar su lote (la conversación no está en pausa)."""
   try:
     conversation = await lock_conversation(session, phone, business_phone)
     conversation.business_phone = business_phone
+    # Si el contacto cambia su nombre de perfil, el aviso usa el último (D7).
+    if contact_name:
+      conversation.contact_name = contact_name
     if conversation.paused_until is not None and conversation.paused_until > now:
       # Durante la pausa solo se guarda para el historial, sin respuesta.
       await save_message(session, phone, message, "history")
@@ -188,9 +194,20 @@ async def claim_batch(session: AsyncSession, phone: str, now: datetime, stale: t
     )
     conversation.processing_since = now
     conversation.batch_due_at = None
-    batch = Batch(phone, conversation.business_phone, conversation.epoch, pending, history)
+    batch = Batch(phone, conversation.business_phone, conversation.epoch, pending, history, conversation.contact_name)
     await session.commit()
     return batch
+  except (SQLAlchemyError, OSError) as exc:
+    raise DatabaseUnavailableError(str(exc)) from exc
+
+async def pause_conversation(session: AsyncSession, phone: str, now: datetime, window: timedelta) -> None:
+  """Pausa la conversación al derivarla a Marco, sin subir epoch ni guardar mensajes (D4)."""
+  try:
+    conversation = await session.get(WhatsappConversation, phone, with_for_update = True, populate_existing = True)
+    if conversation is None:
+      return
+    conversation.paused_until = next_pause(conversation.paused_until, now, window)
+    await session.commit()
   except (SQLAlchemyError, OSError) as exc:
     raise DatabaseUnavailableError(str(exc)) from exc
 
