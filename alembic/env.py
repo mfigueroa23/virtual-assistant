@@ -13,6 +13,7 @@ from src.models.faq_categories import FaqCategory
 from src.models.faqs import Faq
 from src.models.cors_origins import CorsOrigin
 from src.models.whatsapp import WhatsappConversation, WhatsappEvent, WhatsappMessage
+from src.models.knowledge import KnowledgeProposal
 
 config = context.config
 

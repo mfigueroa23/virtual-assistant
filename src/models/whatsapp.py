@@ -52,6 +52,8 @@ class WhatsappNotice(Base):
   thread: Mapped[str] = mapped_column(String(255), primary_key = True)
   phone: Mapped[str] = mapped_column(ForeignKey("whatsapp_conversations.phone", ondelete = "CASCADE"), index = True)
   created_at: Mapped[datetime] = mapped_column(DateTime(timezone = True), server_default = func.now())
+  # Preguntas de «Te consulta», una por línea; nula si el aviso no tenía consultas (RF-25, D10 del plan 009).
+  questions: Mapped[str | None] = mapped_column(Text)
 
 class WhatsappEvent(Base):
   __tablename__ = "whatsapp_events"

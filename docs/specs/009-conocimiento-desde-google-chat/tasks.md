@@ -30,7 +30,7 @@ T02 ─────────────────────────�
   - **Hecho cuando:** `spec.md` y `plan.md` muestran `Status: Approved` y `git log` muestra el commit con la spec, el
     plan y las tareas.
 
-- [ ] **T02 — Comprobar los clics en una tarjeta publicada con la API**
+- [x] **T02 — Comprobar los clics en una tarjeta publicada con la API**
   - **RF:** RF-12, RF-19
   - **Depende de:** — (puede ir en paralelo con T01)
   - **Alcance:** paso 1 del orden del plan.
@@ -43,7 +43,7 @@ T02 ─────────────────────────�
 
 ## Fase 1 — Cimientos
 
-- [ ] **T03 — Modelo, migración y formato del embedding**
+- [x] **T03 — Modelo, migración y formato del embedding**
   - **RF:** RF-14, RF-25
   - **Depende de:** T01
   - **Alcance:**
@@ -59,7 +59,7 @@ T02 ─────────────────────────�
     - `downgrade -1` seguido de `upgrade head` funciona;
     - `uv run pytest` sigue pasando.
 
-- [ ] **T04 — Servicio de conocimiento**
+- [x] **T04 — Servicio de conocimiento**
   - **RF:** RF-05 a RF-10, RF-12, RF-13, RF-16 a RF-18
   - **Depende de:** T03
   - **Alcance:** `src/services/knowledge.py`, con `AreaSummary`, `KnowledgeHit`, `Proposal` y estas funciones:
@@ -91,7 +91,7 @@ T02 ─────────────────────────�
       - resolver dos veces;
     - `uv run pyright` da 0 errores.
 
-- [ ] **T05 — Preguntas guardadas en el aviso**
+- [x] **T05 — Preguntas guardadas en el aviso**
   - **RF:** RF-20, RF-25
   - **Depende de:** T03 (puede ir en paralelo con T04)
   - **Alcance:**

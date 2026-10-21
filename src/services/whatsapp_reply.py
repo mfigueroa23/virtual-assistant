@@ -225,7 +225,7 @@ async def notify(
         await pause_conversation(session, batch.phone, datetime.now(UTC), settings.pause)
       if thread:
         # Después de la pausa: si guardar el hilo falla, la derivación igual quedó pausada (D1 del plan 008).
-        await save_notice(session, thread, batch.phone)
+        await save_notice(session, thread, batch.phone, questions)
   except Exception as exc:
     logger.error("Ha ocurrido un error al avisar a Marco por la conversación de WhatsApp %s: %s", batch.phone, type(exc).__name__)
     return

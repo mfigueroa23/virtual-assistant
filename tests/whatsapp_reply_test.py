@@ -294,6 +294,8 @@ class FakeStore:
         self.messages: dict[str, tuple[str, str, QueuedMessage]] = {}
         # Hilo del aviso → teléfono del contacto.
         self.notices: dict[str, str] = {}
+        # Hilo del aviso → preguntas de «Te consulta» (D10 del plan 009).
+        self.notice_questions: dict[str, list[str]] = {}
 
     def conversation(self, phone: str, business_phone: str = NEGOCIO) -> SimpleNamespace:
         return self.conversations.setdefault(phone, SimpleNamespace(
@@ -363,8 +365,9 @@ class FakeStore:
         conversation = self.conversations[phone]
         conversation.paused_until = whatsapp.next_pause(conversation.paused_until, now, window)
 
-    async def save_notice(self, session, thread, phone):
+    async def save_notice(self, session, thread, phone, questions):
         self.notices.setdefault(thread, phone)
+        self.notice_questions.setdefault(thread, list(questions))
 
     async def add_marco_reply(self, session, phone, message):
         conversation = self.conversations[phone]
@@ -1114,6 +1117,26 @@ async def test_u_r21_los_avisos_de_derivacion_y_encargo_tambien_guardan_su_hilo(
     await drain()
 
     assert channel.store.notices == {"spaces/AAA/threads/t1": CONTACTO}
+
+
+@pytest.mark.anyio
+async def test_u_l8_el_aviso_guarda_las_preguntas_del_turno(channel):
+    channel.turn.actions = [consultar(), consultar("¿Tienes disponibilidad en enero?", "call-q2"), derivar()]
+    await receive(text("in-1", "¿Sabes Kafka? ¿Y en enero? ¿Nos juntamos?"))
+    await drain()
+
+    assert channel.store.notice_questions == {
+        "spaces/AAA/threads/t1": ["¿Trabajaste con Kafka?", "¿Tienes disponibilidad en enero?"]}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("action", [derivar, encargar])
+async def test_u_l8_un_aviso_sin_consultas_guarda_el_hilo_sin_preguntas(channel, action):
+    channel.turn.actions = [action()]
+    await receive(text("in-1", "Hola"))
+    await drain()
+
+    assert channel.store.notice_questions == {"spaces/AAA/threads/t1": []}
 
 # --- T09: medios y mensajes no soportados ---
 

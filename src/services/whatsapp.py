@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
@@ -61,6 +62,8 @@ class NoticeTarget:
   business_phone: str
   contact_name: str | None
   last_inbound_at: datetime | None
+  # Preguntas de «Te consulta» del aviso: solo esas respuestas proponen una FAQ (RF-20, RF-25 de la spec 009).
+  questions: tuple[str, ...] = ()
 
 async def channel_enabled(session: AsyncSession) -> bool:
   # Si falta la property el canal queda apagado: hay que habilitarlo a propósito.
@@ -231,25 +234,32 @@ async def pause_conversation(session: AsyncSession, phone: str, now: datetime, w
   except (SQLAlchemyError, OSError) as exc:
     raise DatabaseUnavailableError(str(exc)) from exc
 
-async def save_notice(session: AsyncSession, thread: str, phone: str) -> None:
+async def save_notice(session: AsyncSession, thread: str, phone: str, questions: Sequence[str] = ()) -> None:
   """Recuerda el hilo de un aviso para reconocer las respuestas de Marco en él, también tras un reinicio (D1, D3)."""
   try:
-    await session.execute(insert(WhatsappNotice).values(thread = thread, phone = phone).on_conflict_do_nothing())
+    # Las preguntas, una por línea, dicen a qué consultas responde el hilo (D10 del plan 009).
+    await session.execute(insert(WhatsappNotice).values(
+      thread = thread, phone = phone, questions = "\n".join(questions) or None
+    ).on_conflict_do_nothing())
     await session.commit()
   except (SQLAlchemyError, OSError) as exc:
     raise DatabaseUnavailableError(str(exc)) from exc
 
 async def find_notice(session: AsyncSession, thread: str) -> NoticeTarget | None:
   try:
-    row = (await session.execute(
-      select(WhatsappConversation).join(WhatsappNotice, WhatsappNotice.phone == WhatsappConversation.phone)
+    found = (await session.execute(
+      select(WhatsappConversation, WhatsappNotice.questions)
+      .join(WhatsappNotice, WhatsappNotice.phone == WhatsappConversation.phone)
       .where(WhatsappNotice.thread == thread)
-    )).scalar_one_or_none()
+    )).tuples().one_or_none()
   except (SQLAlchemyError, OSError) as exc:
     raise DatabaseUnavailableError(str(exc)) from exc
-  if row is None:
+  if found is None:
     return None
-  return NoticeTarget(row.phone, row.business_phone, row.contact_name, row.last_inbound_at)
+  row, questions = found
+  return NoticeTarget(
+    row.phone, row.business_phone, row.contact_name, row.last_inbound_at, tuple((questions or "").splitlines())
+  )
 
 async def add_marco_reply(session: AsyncSession, phone: str, message: QueuedMessage) -> None:
   """Guarda lo que Marco respondió desde Google Chat y reanuda el asistente en la conversación (D5, D6)."""
