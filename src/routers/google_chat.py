@@ -11,6 +11,7 @@ from src.services.google_chat import (
 )
 from src.services.google_chat_reply import NO_DISPONIBLE, answer, read_thresholds
 from src.services.http import outbound_client
+from src.services.knowledge_card import handle_click
 from src.services.property import get_property
 from src.services.whatsapp_relay import relay_reply
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -42,6 +43,9 @@ async def google_chat_events(
     await verify_token(session, credentials)
     if event.chat is not None and event.chat.added_to_space_payload is not None:
       return chat_reply(await get_property(session, "google_chat_welcome"))
+    # Un clic en una tarjeta de conocimiento no es un mensaje: no va al relay ni al «Agente Interno» (spec 009).
+    if event.chat is not None and event.chat.button_clicked_payload is not None:
+      return await handle_click(session, event)
     if not conversation_key(event) or not (message_text(event) or attachments_of(event)):
       return {}
     # Una respuesta en el hilo de un aviso de WhatsApp va al contacto; el resto sigue al Agente Interno (D9 del plan 008).

@@ -6,13 +6,11 @@ from pydantic import SecretStr
 from src.database.session import SessionLocal, engine
 from src.models.faq_categories import FaqCategory
 from src.models.faqs import EMBEDDING_DIMENSIONS, Faq
+from src.services.faq import to_embedding_text
 from src.services.property import get_property
 
 BATCH_SIZE = 50
 logger = logging.getLogger(__name__)
-
-def to_embedding_text(category: str, question: str, answer: str) -> str:
-    return f"Categoría: {category}\nPregunta: {question}\nRespuesta: {answer}"
 
 async def reindex() -> None:
     async with SessionLocal() as session:

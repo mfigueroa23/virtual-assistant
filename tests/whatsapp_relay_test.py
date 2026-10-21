@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import logging
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -59,8 +60,9 @@ class Relay:
         self.send_error: Exception | None = None
         self.replies: list[tuple[str, str]] = []
         self.lookups: list[str] = []
+        self.scheduled: list[tuple[NoticeTarget, str, str]] = []
         for name in ("find_notice", "channel_enabled", "get_property", "family_tone", "send_text", "add_marco_reply",
-                     "conversation_of"):
+                     "conversation_of", "schedule_proposal"):
             monkeypatch.setattr(whatsapp_relay, name, getattr(self, name))
         monkeypatch.setattr(whatsapp_relay.LLM, "create", self.create)
 
@@ -92,6 +94,9 @@ class Relay:
 
     async def add_marco_reply(self, session, phone, message):
         self.replies.append((phone, message.text))
+
+    def schedule_proposal(self, notice, thread, reply):
+        self.scheduled.append((notice, thread, reply))
 
 
 @pytest.fixture
@@ -216,3 +221,61 @@ async def test_u_c11_con_el_canal_apagado_no_se_envia(relay):
 
     assert await reply() == whatsapp_relay.CANAL_APAGADO
     assert relay.sent == [] and relay.writer.calls == []
+
+
+# --- spec 009: propuesta de FAQ tras responder una consulta ---
+
+def with_questions(relay: Relay, *questions: str) -> NoticeTarget:
+    notice = dataclasses.replace(relay.notices[HILO], questions = questions)
+    relay.notices[HILO] = notice
+    return notice
+
+
+@pytest.mark.anyio
+async def test_u_l1_responder_una_consulta_programa_la_propuesta(relay):
+    notice = with_questions(relay, "¿Trabajaste con Kafka?")
+
+    result = await reply()
+
+    assert result == "Enviado a Sara:\n¡Sí! Trabajé dos años con Kafka 🙂"
+    # Con la respuesta original de Marco, no con el mensaje redactado para el contacto.
+    assert relay.scheduled == [(notice, HILO, "Sí, trabajé dos años con Kafka")]
+
+
+@pytest.mark.anyio
+async def test_u_l5_un_aviso_sin_consultas_no_programa_propuesta(relay):
+    await reply()
+
+    assert relay.sent and relay.scheduled == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("fault", ["send", "window"])
+async def test_u_l6_sin_envio_no_hay_propuesta(relay, fault):
+    with_questions(relay, "¿Trabajaste con Kafka?")
+    if fault == "send":
+        relay.send_error = httpx.ConnectError("sin red")
+    else:
+        relay.notices[HILO] = dataclasses.replace(relay.notices[HILO], last_inbound_at = None)
+
+    await reply()
+
+    assert relay.scheduled == []
+
+
+@pytest.mark.anyio
+async def test_u_l6_si_la_propuesta_falla_el_envio_y_la_confirmacion_no_cambian(relay, monkeypatch):
+    from src.services import faq_learning
+    with_questions(relay, "¿Trabajaste con Kafka?")
+    monkeypatch.setattr(whatsapp_relay, "schedule_proposal", faq_learning.schedule_proposal)
+
+    async def failing(notice, thread, text):
+        raise RuntimeError("falló la propuesta")
+
+    monkeypatch.setattr(faq_learning, "propose_faq", failing)
+
+    result = await reply()
+    await asyncio.gather(*faq_learning.pending, return_exceptions = True)
+
+    assert result == "Enviado a Sara:\n¡Sí! Trabajé dos años con Kafka 🙂"
+    assert relay.sent == [(NEGOCIO, CONTACTO, "¡Sí! Trabajé dos años con Kafka 🙂")]

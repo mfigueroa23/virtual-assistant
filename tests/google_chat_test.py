@@ -10,7 +10,7 @@ from langchain_core.messages import AIMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 from main import app
 from src.routers import google_chat as google_chat_router
-from src.interfaces.google_chat import AddonEvent, chat_reply
+from src.interfaces.google_chat import AddonEvent, chat_reply, update_message
 from src.services import google_chat, google_chat_reply
 from src.services.attachments import Attachment
 from src.services.google_chat import (
@@ -45,8 +45,17 @@ def no_relay(monkeypatch):
     async def fake_relay(graph, session, event):
         return None
 
+    async def fake_allowed(session, space):
+        return False
+
+    async def fake_cards(session, turn_id):
+        return []
+
     monkeypatch.setattr(google_chat_router, "relay_reply", fake_relay)
     monkeypatch.setattr(app.state, "whatsapp_graph", object(), raising=False)
+    # Sin BD real: el mensaje no es del space de aviso y el turno no propone cambios (spec 009).
+    monkeypatch.setattr(google_chat_reply, "knowledge_allowed", fake_allowed)
+    monkeypatch.setattr(google_chat_reply, "turn_cards", fake_cards)
 
 
 @pytest.fixture
@@ -220,7 +229,7 @@ def test_endpoint_responde_el_aviso_redactado_por_el_llm(monkeypatch):
     async def fake_read_thresholds(session):
         return 0.01, 1.0
 
-    async def slow_ask(*args):
+    async def slow_ask(*args, **kwargs):
         await asyncio.sleep(0.5)
         return "ok"
 
@@ -239,7 +248,7 @@ def test_endpoint_responde_el_aviso_redactado_por_el_llm(monkeypatch):
     async def fake_chat_token(session, http):
         return "ya29.token"
 
-    async def fake_create_message(space, text, token, http):
+    async def fake_create_message(space, text, token, http, **kwargs):
         return None
 
     monkeypatch.setattr(google_chat_router, "verify_token", fake_verify_token)
@@ -368,3 +377,87 @@ async def test_chat_token_es_none_y_registra_error_sin_la_cuenta_de_servicio(mon
 
     assert token is None
     assert any(record.levelno == logging.ERROR for record in caplog.records)
+
+# --- spec 009: tarjetas y clics ---
+
+def click_event(space: str = "spaces/DM1", decision: str = "apply") -> dict:
+    return {
+        "commonEventObject": {"parameters": {"proposal": "p-1", "decision": decision}},
+        "chat": {"buttonClickedPayload": {
+            "space": {"name": space, "spaceType": "DIRECT_MESSAGE"},
+            "message": {"text": "Te propongo esto", "cardsV2": [{"cardId": "p-1", "card": {"sections": []}}]}}}}
+
+
+def test_e11_addon_event_lee_el_clic_y_sus_parametros():
+    event = AddonEvent.model_validate(click_event())
+
+    assert event.chat is not None and event.chat.button_clicked_payload is not None
+    assert event.chat.button_clicked_payload.space is not None
+    assert event.chat.button_clicked_payload.space.name == "spaces/DM1"
+    message = event.chat.button_clicked_payload.message
+    assert message is not None and message.cards_v2[0]["cardId"] == "p-1"
+    assert event.common_event_object is not None
+    assert event.common_event_object.parameters == {"proposal": "p-1", "decision": "apply"}
+
+
+def test_e11_chat_reply_y_update_message_con_tarjetas():
+    card = {"cardId": "p-1", "card": {"sections": []}}
+
+    assert chat_reply("ok") == {"hostAppDataAction": {"chatDataAction": {"createMessageAction": {"message": {"text": "ok"}}}}}
+    assert chat_reply("ok", [card])["hostAppDataAction"]["chatDataAction"]["createMessageAction"]["message"] == {
+        "text": "ok", "cardsV2": [card]}
+    assert update_message([card], "ok") == {"hostAppDataAction": {"chatDataAction": {"updateMessageAction": {
+        "message": {"text": "ok", "cardsV2": [card]}}}}}
+
+
+@pytest.mark.anyio
+async def test_e11_create_message_con_tarjetas_en_el_hilo():
+    seen: list[httpx.Request] = []
+    card = {"cardId": "p-1", "card": {"sections": []}}
+    async with mock_http(b'{"thread": {"name": "spaces/AAA/threads/t1"}}', seen) as http:
+        await create_message("spaces/AAA", "", "ya29.token", http, cards = [card], thread = "spaces/AAA/threads/t1")
+
+    body = json.loads(seen[0].content)
+    assert body == {"cardsV2": [card], "thread": {"name": "spaces/AAA/threads/t1"}}
+    assert seen[0].url.params["messageReplyOption"] == "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
+
+
+def test_e9_un_clic_firmado_va_a_handle_click(monkeypatch):
+    seen: list[AddonEvent] = []
+
+    async def fake_verify_token(session, credentials):
+        return None
+
+    async def fake_click(session, event):
+        seen.append(event)
+        return update_message([{"cardId": "p-1", "card": {"sections": []}}])
+
+    async def unexpected(*args, **kwargs):
+        raise AssertionError("un clic no va al relay ni al Agente Interno")
+
+    monkeypatch.setattr(google_chat_router, "verify_token", fake_verify_token)
+    monkeypatch.setattr(google_chat_router, "handle_click", fake_click)
+    monkeypatch.setattr(google_chat_router, "relay_reply", unexpected)
+    monkeypatch.setattr(google_chat_router, "answer", unexpected)
+
+    response = TestClient(app).post("/api/v1/google-chat/events", json=click_event(), headers={"Authorization": "Bearer t"})
+
+    assert response.status_code == 200
+    assert response.json() == update_message([{"cardId": "p-1", "card": {"sections": []}}])
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize("headers", [{}, {"Authorization": "Bearer token-falso"}])
+def test_e10_un_clic_sin_token_valido_responde_401(monkeypatch, headers):
+    async def failing_verify(session, credentials):
+        raise InvalidGoogleTokenError("token inválido")
+
+    async def unexpected(*args, **kwargs):
+        raise AssertionError("no debe llegar a handle_click")
+
+    monkeypatch.setattr(google_chat_router, "verify_token", failing_verify)
+    monkeypatch.setattr(google_chat_router, "handle_click", unexpected)
+
+    response = TestClient(app).post("/api/v1/google-chat/events", json=click_event(), headers=headers)
+
+    assert response.status_code == 401

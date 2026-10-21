@@ -8,6 +8,10 @@ from src.models.faqs import Faq
 from src.services.property import get_property
 from src.utils.exceptions.database import DatabaseUnavailableError
 
+def to_embedding_text(category: str, question: str, answer: str) -> str:
+  # Mismo formato para la reindexación y para las FAQs creadas desde Google Chat: quedan comparables (D15 del plan 009).
+  return f"Categoría: {category}\nPregunta: {question}\nRespuesta: {answer}"
+
 @dataclass
 class FaqResult:
     category: str
