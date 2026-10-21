@@ -109,7 +109,7 @@ T01 ─┬─► T02 ───────────────────�
 
 ## Fase 4 — Documentación, calidad y release
 
-- [ ] **T09 — README**
+- [x] **T09 — README**
   - **RF:** —
   - **Depende de:** T08
   - **Alcance:**
@@ -122,7 +122,7 @@ T01 ─┬─► T02 ───────────────────�
     `whatsapp_family_instructions`, `derivar_a_marco`,
     `registrar_encargo`, `wa.me` y el `UPDATE agents`.
 
-- [ ] **T10 — Puerta de calidad**
+- [x] **T10 — Puerta de calidad**
   - **RF:** —
   - **Depende de:** T09
   - **Alcance:** checklist de `AGENTS.md` sobre toda la rama.
