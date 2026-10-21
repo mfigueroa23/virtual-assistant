@@ -269,14 +269,22 @@ async def test_download_con_el_token_y_corta_al_pasar_el_maximo(monkeypatch):
 @pytest.mark.anyio
 async def test_create_message_publica_en_el_space_sin_hilo():
     seen: list[httpx.Request] = []
-    async with mock_http(b"{}", seen) as http:
-        await create_message("spaces/AAA", "<users/123> ok", "ya29.token", http)
+    created = b'{"name": "spaces/AAA/messages/m1", "thread": {"name": "spaces/AAA/threads/t1"}}'
+    async with mock_http(created, seen) as http:
+        # Devuelve el hilo que abrió el mensaje, para reconocer las respuestas en él (D2 del plan 008).
+        assert await create_message("spaces/AAA", "<users/123> ok", "ya29.token", http) == "spaces/AAA/threads/t1"
 
     assert seen[0].method == "POST"
     assert str(seen[0].url) == "https://chat.googleapis.com/v1/spaces/AAA/messages"
     assert seen[0].headers["Authorization"] == "Bearer ya29.token"
     body = json.loads(seen[0].content)
     assert body == {"text": "<users/123> ok"} and "thread" not in body
+
+
+@pytest.mark.anyio
+async def test_create_message_sin_hilo_en_la_respuesta_devuelve_none():
+    async with mock_http(b"{}", []) as http:
+        assert await create_message("spaces/AAA", "ok", "ya29.token", http) is None
 
 
 @pytest.mark.anyio

@@ -218,7 +218,8 @@ async def notify(
     async with SessionLocal() as session:
       summary = await summary_of(graph, session, batch.phone) if motivos else None
       text = notice_text(batch.contact_name, batch.phone, motivos, summary, tasks, family)
-      published = await publish_notice(session, text)
+      thread = await publish_notice(session, text)
+      published = thread is not None
       if published and motivos:
         # La ventana se cuenta desde el aviso; sin aviso no hay pausa y el asistente sigue respondiendo (RF-05, RF-14).
         await pause_conversation(session, batch.phone, datetime.now(UTC), settings.pause)

@@ -108,8 +108,11 @@ def notice_text(
     sections.append(f"Encargos:\n{bullets(tasks)}")
   return "\n\n".join(sections)
 
-async def publish_notice(session: AsyncSession, text: str) -> bool:
-  """Publica el aviso en el space de Marco; False si no está configurado o si falla tras 3 intentos (D8)."""
+async def publish_notice(session: AsyncSession, text: str) -> str | None:
+  """Publica el aviso en el space de Marco y devuelve su hilo ("" si Google Chat no lo informó).
+
+  Devuelve None si el space no está configurado, falta el token o falla tras 3 intentos (D8).
+  """
   # Sin caché: un cambio del space aplica desde el siguiente aviso (RF-15).
   try:
     space = (await get_property(session, "whatsapp_notify_space")).strip()
@@ -117,19 +120,23 @@ async def publish_notice(session: AsyncSession, text: str) -> bool:
     space = ""
   if not space:
     logger.error("Falta la property whatsapp_notify_space: no se publica el aviso de WhatsApp")
-    return False
+    return None
   async with outbound_client(20) as http:
     token = await chat_token(session, http)
     if token is None:
-      return False
+      return None
     for attempt, wait in enumerate([*ESPERAS, None], start = 1):
       try:
-        await create_message(space, text, token, http)
-        return True
+        thread = await create_message(space, text, token, http)
+        if thread is None:
+          # Publicado, pero sin hilo no se podrá responder desde Google Chat (RF-11 de la spec 008).
+          logger.warning("Google Chat no devolvió el hilo del aviso de WhatsApp")
+          return ""
+        return thread
       except Exception as exc:
         # Solo el tipo de error: el aviso trae datos de la conversación.
         logger.warning("No se pudo publicar el aviso de WhatsApp (intento %s): %s", attempt, type(exc).__name__)
       if wait is not None:
         await asyncio.sleep(wait)
   logger.error("No se pudo publicar el aviso de WhatsApp en Google Chat después de %s intentos", len(ESPERAS) + 1)
-  return False
+  return None

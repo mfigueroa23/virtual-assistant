@@ -234,6 +234,13 @@ def test_next_pause_renueva_pero_no_acorta():
     assert whatsapp.next_pause(actual, AHORA - timedelta(hours = 1), timedelta(hours = 12)) == actual
 
 
+def test_u_r22_latest_inbound_guarda_el_mensaje_mas_reciente():
+    assert whatsapp.latest_inbound(None, AHORA) == AHORA
+    assert whatsapp.latest_inbound(AHORA, AHORA + timedelta(minutes = 5)) == AHORA + timedelta(minutes = 5)
+    # Un mensaje atrasado no mueve la ventana hacia atrás.
+    assert whatsapp.latest_inbound(AHORA, AHORA - timedelta(minutes = 5)) == AHORA
+
+
 STALE = timedelta(seconds = 180)
 
 
@@ -289,7 +296,7 @@ class FakeStore:
     def conversation(self, phone: str, business_phone: str = NEGOCIO) -> SimpleNamespace:
         return self.conversations.setdefault(phone, SimpleNamespace(
             business_phone = business_phone, paused_until = None, batch_due_at = None, processing_since = None, epoch = 0,
-            contact_name = None))
+            contact_name = None, last_inbound_at = None))
 
     def with_status(self, phone: str, status: str) -> list[QueuedMessage]:
         found = [message for owner, state, message in self.messages.values() if owner == phone and state == status]
@@ -312,6 +319,7 @@ class FakeStore:
     async def add_inbound(self, session, phone, business_phone, message, now, grouping, contact_name = None):
         conversation = self.conversation(phone, business_phone)
         conversation.contact_name = contact_name or conversation.contact_name
+        conversation.last_inbound_at = whatsapp.latest_inbound(conversation.last_inbound_at, message.sent_at)
         if conversation.paused_until is not None and conversation.paused_until > now:
             self.messages.setdefault(message.id, (phone, "history", message))
             return False
@@ -352,6 +360,11 @@ class FakeStore:
     async def pause_conversation(self, session, phone, now, window):
         conversation = self.conversations[phone]
         conversation.paused_until = whatsapp.next_pause(conversation.paused_until, now, window)
+
+    async def add_marco_reply(self, session, phone, message):
+        conversation = self.conversations[phone]
+        conversation.paused_until = None
+        self.messages.setdefault(message.id, (phone, "history", message))
 
     async def current_epoch(self, session, phone):
         return self.conversations[phone].epoch
@@ -469,6 +482,8 @@ async def test_u_w18_entrante_en_pausa_queda_para_el_historial(store, scheduled)
 
     assert store.messages["in-1"][1] == "history"
     assert scheduled == []
+    # Durante la pausa también cuenta para la ventana de 24 h.
+    assert store.conversations[CONTACTO].last_inbound_at == AHORA
 
 
 @pytest.mark.anyio
@@ -592,7 +607,7 @@ class FakeHandoff:
 
     async def publish_notice(self, session, text):
         self.published.append(text)
-        return self.publish_result
+        return f"spaces/AAA/threads/t{len(self.published)}" if self.publish_result else None
 
 
 @pytest.fixture
@@ -1011,6 +1026,22 @@ async def test_u_r15_no_familiar_no_recibe_el_trato_familiar(channel):
 
     assert FakeHandoff.FAMILIA not in channel.turn.calls[0]["instructions"]
     assert "(familia)" not in channel.handoff.published[0]
+
+
+@pytest.mark.anyio
+async def test_u_r20_respuesta_de_marco_desde_el_hilo_reanuda_y_entra_al_historial(channel):
+    channel.store.conversation(CONTACTO).paused_until = datetime.now(UTC) + timedelta(hours = 1)
+    reply = QueuedMessage("gchat-1", "echo", AHORA, "text", "Sí, trabajé dos años con Kafka")
+
+    await channel.store.add_marco_reply(FakeSession(), CONTACTO, reply)
+
+    conversation = channel.store.conversations[CONTACTO]
+    assert conversation.paused_until is None and conversation.epoch == 0
+    await receive(text("in-1", "¡Genial, gracias!"))
+    await drain()
+    previous = channel.turn.calls[0]["previous"]
+    assert [(type(message).__name__, message.text) for message in previous] == [
+        ("AIMessage", "Sí, trabajé dos años con Kafka")]
 
 # --- T09: medios y mensajes no soportados ---
 

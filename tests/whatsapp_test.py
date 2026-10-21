@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 from src.routers import whatsapp as whatsapp_router
+from src.services import whatsapp as whatsapp_service
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.property import PropertyNotFoundError
 
@@ -42,6 +43,8 @@ def endpoint(monkeypatch):
         graphs.append(graph)
 
     monkeypatch.setattr(whatsapp_router, "get_property", fake_get_property)
+    # channel_enabled vive en services y lee whatsapp_enabled con su propio get_property (D14 del plan 008).
+    monkeypatch.setattr(whatsapp_service, "get_property", fake_get_property)
     monkeypatch.setattr(whatsapp_router, "handle_event", fake_handle_event)
     monkeypatch.setattr(app.state, "graph", object(), raising = False)
     monkeypatch.setattr(app.state, "whatsapp_graph", object(), raising = False)

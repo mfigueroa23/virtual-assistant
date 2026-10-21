@@ -156,6 +156,7 @@ class FakeChat:
         self.attempts.append((space, text))
         if len(self.attempts) <= self.failures:
             raise httpx.ConnectError("caído")
+        return f"{space}/threads/t{len(self.attempts)}"
 
 
 def test_las_esperas_entre_intentos_son_de_1_y_2_segundos():
@@ -166,8 +167,15 @@ def test_las_esperas_entre_intentos_son_de_1_y_2_segundos():
 async def test_u_d7_falla_dos_veces_y_publica_al_tercer_intento(monkeypatch):
     chat = FakeChat(monkeypatch, {"whatsapp_notify_space": "spaces/AAA"}, failures = 2)
 
-    assert await publish_notice(SESSION, "aviso") is True
+    assert await publish_notice(SESSION, "aviso") == "spaces/AAA/threads/t3"
     assert chat.attempts == [("spaces/AAA", "aviso")] * 3
+
+
+@pytest.mark.anyio
+async def test_u_q7_publish_notice_devuelve_el_hilo_del_aviso(monkeypatch):
+    FakeChat(monkeypatch, {"whatsapp_notify_space": "spaces/AAA"})
+
+    assert await publish_notice(SESSION, "aviso") == "spaces/AAA/threads/t1"
 
 
 @pytest.mark.anyio
@@ -175,7 +183,7 @@ async def test_u_d8_falla_tres_veces_y_no_publica(monkeypatch, caplog):
     chat = FakeChat(monkeypatch, {"whatsapp_notify_space": "spaces/AAA"}, failures = 3)
 
     with caplog.at_level(logging.WARNING, logger = "src.services.whatsapp_handoff"):
-        assert await publish_notice(SESSION, "Sara quiere una reunión") is False
+        assert await publish_notice(SESSION, "Sara quiere una reunión") is None
 
     assert len(chat.attempts) == 3
     assert any(record.levelno == logging.ERROR for record in caplog.records)
@@ -188,7 +196,7 @@ async def test_u_d8_falla_tres_veces_y_no_publica(monkeypatch, caplog):
 async def test_u_d9_sin_space_o_sin_token_no_publica(monkeypatch, properties, token):
     chat = FakeChat(monkeypatch, properties, token = token)
 
-    assert await publish_notice(SESSION, "aviso") is False
+    assert await publish_notice(SESSION, "aviso") is None
     assert chat.attempts == []
 
 
@@ -293,3 +301,17 @@ async def test_u_d20_sin_lista_familiar_nadie_es_familiar(monkeypatch, phones):
     instructions, family = await turn_instructions(SESSION, CONTACTO)
 
     assert family is False and "Trátala de mamá." not in instructions
+
+
+@pytest.mark.anyio
+async def test_aviso_publicado_sin_hilo_cuenta_como_publicado(monkeypatch):
+    chat = FakeChat(monkeypatch, {"whatsapp_notify_space": "spaces/AAA"})
+
+    async def without_thread(space, text, token, http):
+        chat.attempts.append((space, text))
+        return None
+
+    monkeypatch.setattr(whatsapp_handoff, "create_message", without_thread)
+
+    assert await publish_notice(SESSION, "aviso") == ""
+    assert len(chat.attempts) == 1

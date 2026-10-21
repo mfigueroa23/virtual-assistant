@@ -3,10 +3,10 @@ import time
 import psycopg
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import ValidationError
-from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.session import SessionDep
 from src.interfaces.whatsapp import WhatsappEvent
 from src.services.property import get_property
+from src.services.whatsapp import channel_enabled
 from src.services.whatsapp_reply import handle_event
 from src.services.ycloud import verify_signature
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -17,13 +17,6 @@ router = APIRouter(prefix="/api/v1", tags=["WhatsApp"])
 logger = logging.getLogger(__name__)
 
 NO_DISPONIBLE = "Servicio no disponible. Intenta de nuevo más tarde"
-
-async def channel_enabled(session: AsyncSession) -> bool:
-  # Si falta la property el canal queda apagado: hay que habilitarlo a propósito.
-  try:
-    return (await get_property(session, "whatsapp_enabled")).strip().lower() == "true"
-  except PropertyNotFoundError:
-    return False
 
 @router.post(
   "/whatsapp/events",

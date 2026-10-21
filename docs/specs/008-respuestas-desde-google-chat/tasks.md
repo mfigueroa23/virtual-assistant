@@ -38,7 +38,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
 
 ## Fase 1 — Cimientos
 
-- [ ] **T03 — Tabla `whatsapp_notices`, columna `last_inbound_at` y migración**
+- [x] **T03 — Tabla `whatsapp_notices`, columna `last_inbound_at` y migración**
   - **RF:** RF-18, RF-19
   - **Depende de:** T01 (puede ir en paralelo con T04 y T06)
   - **Alcance:**
@@ -51,7 +51,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
     - `uv run alembic upgrade head`, luego `uv run alembic downgrade -1 && uv run alembic upgrade head`, terminan sin error en la BD local;
     - `uv run alembic check` no reporta diferencias.
 
-- [ ] **T04 — `create_message` y `publish_notice` devuelven el hilo**
+- [x] **T04 — `create_message` y `publish_notice` devuelven el hilo**
   - **RF:** RF-18
   - **Depende de:** T01 (puede ir en paralelo con T03 y T06)
   - **Alcance:**
@@ -63,7 +63,7 @@ T01 ─┬─► T03 ─► T05 ──────────┬─► T07 ─�
     - `test_create_message_publica_en_el_space_sin_hilo` comprueba el hilo devuelto;
     - U-D7 a U-D10, `tests/google_chat_reply_test.py` y `tests/whatsapp_reply_test.py` siguen pasando.
 
-- [ ] **T05 — Acceso a datos de avisos y respuestas de Marco**
+- [x] **T05 — Acceso a datos de avisos y respuestas de Marco**
   - **RF:** RF-15, RF-16, RF-18, RF-23
   - **Depende de:** T03
   - **Alcance:**

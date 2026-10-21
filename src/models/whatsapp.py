@@ -20,6 +20,8 @@ class WhatsappConversation(Base):
   epoch: Mapped[int] = mapped_column(Integer, server_default = "0")
   # Nombre de perfil de WhatsApp del contacto, para el aviso a Marco; se actualiza con cada mensaje entrante.
   contact_name: Mapped[str | None] = mapped_column(String(255))
+  # Último mensaje del contacto: WhatsApp solo permite texto libre por la API hasta 24 h después (RF-19).
+  last_inbound_at: Mapped[datetime | None] = mapped_column(DateTime(timezone = True))
 
 class WhatsappMessage(Base):
   __tablename__ = "whatsapp_messages"
@@ -42,6 +44,14 @@ class WhatsappMessage(Base):
   media_link: Mapped[str | None] = mapped_column(Text)
   media_mime: Mapped[str | None] = mapped_column(String(255))
   media_name: Mapped[str | None] = mapped_column(String(255))
+
+class WhatsappNotice(Base):
+  __tablename__ = "whatsapp_notices"
+
+  # Hilo de Google Chat del aviso (spaces/…/threads/…): una respuesta en él va al contacto (D1, D3).
+  thread: Mapped[str] = mapped_column(String(255), primary_key = True)
+  phone: Mapped[str] = mapped_column(ForeignKey("whatsapp_conversations.phone", ondelete = "CASCADE"), index = True)
+  created_at: Mapped[datetime] = mapped_column(DateTime(timezone = True), server_default = func.now())
 
 class WhatsappEvent(Base):
   __tablename__ = "whatsapp_events"
