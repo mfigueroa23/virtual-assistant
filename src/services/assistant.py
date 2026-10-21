@@ -56,7 +56,9 @@ async def ask(
   audiencia: str,
   thread_id: str,
   mensaje: str,
-  previous: Sequence[AnyMessage] = ()
+  previous: Sequence[AnyMessage] = (),
+  turn_id: str | None = None,
+  exclude: Collection[str] = ()
 ) -> str:
-  turn = await run_turn(graph, session, coordinator, audiencia, thread_id, mensaje, previous)
+  turn = await run_turn(graph, session, coordinator, audiencia, thread_id, mensaje, previous, turn_id = turn_id, exclude = exclude)
   return turn[-1].text

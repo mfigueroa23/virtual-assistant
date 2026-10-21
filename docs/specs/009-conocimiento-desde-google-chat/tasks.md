@@ -123,7 +123,7 @@ T02 ─────────────────────────�
 
 ## Fase 3 — Tarjetas y clics
 
-- [ ] **T07 — Interfaces de tarjetas, `create_message` y `proposal_card`**
+- [x] **T07 — Interfaces de tarjetas, `create_message` y `proposal_card`**
   - **RF:** RF-07 a RF-09, RF-11, RF-21
   - **Depende de:** T04 (puede ir en paralelo con T05 y T06)
   - **Alcance:**
@@ -140,7 +140,7 @@ T02 ─────────────────────────�
     - E11 pasa con `uv run pytest tests/google_chat_test.py`;
     - el test existente de `create_message` sigue pasando.
 
-- [ ] **T08 — Tarjetas en las respuestas del Agente Interno**
+- [x] **T08 — Tarjetas en las respuestas del Agente Interno**
   - **RF:** RF-03, RF-04, RF-07, RF-11
   - **Depende de:** T06, T07
   - **Alcance:** en `src/services/google_chat_reply.py`:
@@ -153,7 +153,7 @@ T02 ─────────────────────────�
     - U-T4 y U-K3 completo pasan;
     - `uv run pytest tests/google_chat_reply_test.py` sigue pasando con el texto en `ChatAnswer`.
 
-- [ ] **T09 — Clics en los botones**
+- [x] **T09 — Clics en los botones**
   - **RF:** RF-12 a RF-19, RF-27
   - **Depende de:** T02, T07
   - **Alcance:**

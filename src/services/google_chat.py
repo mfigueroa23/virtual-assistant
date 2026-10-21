@@ -2,11 +2,12 @@ import json
 import logging
 import re
 import time
+from collections.abc import Sequence
 from typing import Any
 import httpx
 from google.auth import crypt, exceptions, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.interfaces.google_chat import AddonEvent
+from src.interfaces.google_chat import AddonEvent, message_body
 from src.services.attachments import MAX_BYTES, Attachment
 from src.services.property import get_property
 from src.utils.exceptions.attachments import AttachmentTooLargeError
@@ -124,11 +125,19 @@ async def download(resource_name: str, token: str, http: httpx.AsyncClient) -> b
       chunks.append(chunk)
   return b"".join(chunks)
 
-async def create_message(space: str, text: str, token: str, http: httpx.AsyncClient) -> str | None:
+async def create_message(
+  space: str, text: str, token: str, http: httpx.AsyncClient, cards: Sequence[dict[str, Any]] = (), thread: str | None = None
+) -> str | None:
   """Publica el mensaje y devuelve el hilo que abrió, o None si la respuesta no lo trae."""
   # Sin "thread" Google Chat publica el mensaje fuera del hilo original.
   headers = { "Authorization": f"Bearer {token}" }
-  response = await http.post(f"{CHAT_API_URL}/{space}/messages", json = { "text": text }, headers = headers)
+  body = message_body(text, cards)
+  params: dict[str, str] | None = None
+  if thread:
+    # En el hilo del aviso; si ya no existe, Google Chat abre uno nuevo en vez de rechazar el mensaje (spec 009).
+    body["thread"] = { "name": thread }
+    params = { "messageReplyOption": "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD" }
+  response = await http.post(f"{CHAT_API_URL}/{space}/messages", json = body, params = params, headers = headers)
   response.raise_for_status()
-  thread = response.json().get("thread") or {}
-  return thread.get("name")
+  created = response.json().get("thread") or {}
+  return created.get("name")

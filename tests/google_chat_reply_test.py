@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.interfaces.google_chat import AddonEvent, ChatAttachment, chat_reply
 from src.services import google_chat_reply
 from src.services.google_chat_reply import (
-    AVISO, AVISO_DATOS, DEMORA, NO_DISPONIBLE, answer, cancel_pending, draft_notice, pending, process,
+    AVISO, AVISO_DATOS, DEMORA, NO_DISPONIBLE, ChatAnswer, answer, cancel_pending, draft_notice, pending, process,
     read_notice_settings, read_thresholds)
 from src.utils.exceptions.agents import AgentNotFoundError
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -17,6 +17,19 @@ from src.utils.exceptions.property import PropertyNotFoundError
 
 GRAPH = cast(Any, object())
 SESSION = cast(AsyncSession, None)
+
+
+@pytest.fixture(autouse=True)
+def no_knowledge(monkeypatch):
+    """Por defecto el mensaje no viene del space de aviso y el turno no propone cambios: sin BD real."""
+    async def fake_allowed(session, space):
+        return False
+
+    async def fake_cards(session, turn_id):
+        return []
+
+    monkeypatch.setattr(google_chat_reply, "knowledge_allowed", fake_allowed)
+    monkeypatch.setattr(google_chat_reply, "turn_cards", fake_cards)
 
 
 def space_event() -> AddonEvent:
@@ -38,32 +51,32 @@ def dm_event() -> AddonEvent:
 async def test_process_devuelve_la_respuesta_con_el_hilo_del_mensaje_original(monkeypatch):
     calls: list[str] = []
 
-    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje):
+    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje, **kwargs):
         calls.append(thread_id)
         return "ok"
 
     monkeypatch.setattr(google_chat_reply, "ask", fake_ask)
 
-    assert await process(GRAPH, space_event(), 1) == "ok"
+    assert await process(GRAPH, space_event(), 1) == ChatAnswer("ok")
     assert calls == ["spaces/AAA/threads/T1"]
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("error", [AgentNotFoundError("Agente Interno"), DatabaseUnavailableError("sin conexión")])
 async def test_process_devuelve_no_disponible_si_falla_el_agente_o_la_bd(monkeypatch, error):
-    async def fake_ask(*args):
+    async def fake_ask(*args, **kwargs):
         raise error
 
     monkeypatch.setattr(google_chat_reply, "ask", fake_ask)
 
-    assert await process(GRAPH, space_event(), 1) == NO_DISPONIBLE
+    assert await process(GRAPH, space_event(), 1) == ChatAnswer(NO_DISPONIBLE)
 
 
 @pytest.mark.anyio
 async def test_process_devuelve_demora_y_cancela_ask_al_pasar_el_maximo(monkeypatch):
     cancelled = asyncio.Event()
 
-    async def blocked_ask(*args):
+    async def blocked_ask(*args, **kwargs):
         try:
             await asyncio.Event().wait()
         except asyncio.CancelledError:
@@ -72,7 +85,7 @@ async def test_process_devuelve_demora_y_cancela_ask_al_pasar_el_maximo(monkeypa
 
     monkeypatch.setattr(google_chat_reply, "ask", blocked_ask)
 
-    assert await process(GRAPH, space_event(), 0.01) == DEMORA
+    assert await process(GRAPH, space_event(), 0.01) == ChatAnswer(DEMORA)
     assert cancelled.is_set()
 
 
@@ -266,7 +279,7 @@ async def test_draft_notice_usa_el_aviso_fijo_si_el_llm_responde_vacio(monkeypat
 
 def asking(release: asyncio.Event | None = None):
     """ask falso: responde "ok" en cuanto se libera el evento (o de inmediato si no hay evento)."""
-    async def fake_ask(*args):
+    async def fake_ask(*args, **kwargs):
         if release is not None:
             await release.wait()
         return "ok"
@@ -281,7 +294,7 @@ def published(monkeypatch) -> list[tuple[str, str]]:
     async def fake_chat_token(session, http):
         return "ya29.token"
 
-    async def fake_create_message(space, text, token, http):
+    async def fake_create_message(space, text, token, http, **kwargs):
         calls.append((space, text))
 
     monkeypatch.setattr(google_chat_reply, "chat_token", fake_chat_token)
@@ -329,7 +342,7 @@ async def test_answer_registra_error_y_no_reintenta_si_falla_la_publicacion(monk
     async def fake_chat_token(session, http):
         return "ya29.token"
 
-    async def failing_create_message(space, text, token, http):
+    async def failing_create_message(space, text, token, http, **kwargs):
         calls.append(text)
         raise httpx.HTTPError("403")
 
@@ -478,7 +491,7 @@ async def test_answer_no_guarda_el_aviso_en_el_historial(monkeypatch, published,
     release = asyncio.Event()
     asked: list[tuple[str, str]] = []
 
-    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje):
+    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje, **kwargs):
         asked.append((thread_id, mensaje))
         await release.wait()
         return "ok"
@@ -492,3 +505,90 @@ async def test_answer_no_guarda_el_aviso_en_el_historial(monkeypatch, published,
 
     assert asked == [("spaces/AAA/threads/T1", "¿cómo pago?")]
     assert published == [("spaces/AAA", "<users/123> ok")]
+
+
+# --- spec 009: conocimiento y tarjetas en las respuestas del Agente Interno ---
+
+CARD = {"cardId": "p-1", "card": {"sections": []}}
+
+
+def knowledge_turn(monkeypatch, allowed: bool, release: asyncio.Event | None = None) -> list[dict[str, Any]]:
+    """ask falso que registra turno y exclusión; turn_cards devuelve una tarjeta para ese mismo turno."""
+    calls: list[dict[str, Any]] = []
+
+    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje, turn_id = None, exclude = ()):
+        calls.append({"turn_id": turn_id, "exclude": tuple(exclude)})
+        if release is not None:
+            await release.wait()
+        return "Te propongo este cambio"
+
+    async def fake_allowed(session, space):
+        calls.append({"space": space})
+        return allowed
+
+    async def fake_cards(session, turn_id):
+        return [CARD] if turn_id == calls[-1]["turn_id"] else []
+
+    monkeypatch.setattr(google_chat_reply, "ask", fake_ask)
+    monkeypatch.setattr(google_chat_reply, "knowledge_allowed", fake_allowed)
+    monkeypatch.setattr(google_chat_reply, "turn_cards", fake_cards)
+    return calls
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("allowed", "exclude"), [(True, ()), (False, ("Conocimiento",))])
+async def test_u_k3_process_excluye_el_conocimiento_fuera_del_space_de_aviso(monkeypatch, allowed, exclude):
+    calls = knowledge_turn(monkeypatch, allowed)
+
+    await process(GRAPH, dm_event(), 1)
+
+    assert calls[0] == {"space": "spaces/DM1"}
+    assert calls[1]["exclude"] == exclude and calls[1]["turn_id"]
+
+
+@pytest.mark.anyio
+async def test_u_t4_process_devuelve_las_tarjetas_del_turno(monkeypatch):
+    knowledge_turn(monkeypatch, True)
+
+    assert await process(GRAPH, dm_event(), 1) == ChatAnswer("Te propongo este cambio", [CARD])
+
+
+@pytest.mark.anyio
+async def test_u_t4_cada_mensaje_tiene_su_propio_turno(monkeypatch):
+    calls = knowledge_turn(monkeypatch, True)
+
+    await process(GRAPH, dm_event(), 1)
+    await process(GRAPH, dm_event(), 1)
+
+    turnos = [call["turn_id"] for call in calls if "turn_id" in call]
+    assert len(set(turnos)) == 2
+
+
+@pytest.mark.anyio
+async def test_u_t4_respuesta_sincrona_con_tarjetas(monkeypatch, published):
+    knowledge_turn(monkeypatch, True)
+
+    assert await answer(GRAPH, dm_event(), 0.5, 1) == chat_reply("Te propongo este cambio", [CARD])
+
+
+@pytest.mark.anyio
+async def test_u_t4_respuesta_diferida_con_tarjetas(monkeypatch):
+    release = asyncio.Event()
+    published: list[dict[str, Any]] = []
+    fake_properties(monkeypatch, {})
+    knowledge_turn(monkeypatch, True, release)
+
+    async def fake_chat_token(session, http):
+        return "ya29.token"
+
+    async def fake_create_message(space, text, token, http, cards = (), thread = None):
+        published.append({"space": space, "text": text, "cards": list(cards)})
+
+    monkeypatch.setattr(google_chat_reply, "chat_token", fake_chat_token)
+    monkeypatch.setattr(google_chat_reply, "create_message", fake_create_message)
+
+    assert await answer(GRAPH, dm_event(), 0.01, 1) == chat_reply(AVISO)
+    release.set()
+    await delivered()
+
+    assert published == [{"space": "spaces/DM1", "text": "Te propongo este cambio", "cards": [CARD]}]
