@@ -19,10 +19,10 @@ from src.services.http import outbound_client
 from src.services.property import get_property
 from src.services.whatsapp import (
   Batch, QueuedMessage, Wait, WhatsappSettings, add_echo, add_inbound, claim_batch, current_epoch, defer_batch,
-  defer_conversation, finish_batch, pause_conversation, pending_phones, read_settings, register_event
+  defer_conversation, finish_batch, pause_conversation, pending_phones, read_settings, register_event, save_notice
 )
 from src.services.whatsapp_handoff import (
-  derivations_of, notice_text, publish_notice, summarize, tasks_of, transcript, turn_instructions
+  derivations_of, notice_text, publish_notice, questions_of, summarize, tasks_of, transcript, turn_instructions
 )
 from src.services.ycloud import download_media, mark_as_read, send_text, split_text
 from src.utils.exceptions.agents import AgentNotFoundError
@@ -211,22 +211,26 @@ async def summary_of(graph: CompiledStateGraph[MessagesState, CoordinatorContext
 
 async def notify(
   graph: CompiledStateGraph[MessagesState, CoordinatorContext], batch: Batch, motivos: list[str], tasks: list[str],
-  family: bool, settings: WhatsappSettings
+  questions: list[str], family: bool, settings: WhatsappSettings
 ) -> None:
   """Publica un solo aviso del turno y pausa solo si hubo derivación y el aviso se publicó (D5, D15)."""
   try:
     async with SessionLocal() as session:
       summary = await summary_of(graph, session, batch.phone) if motivos else None
-      text = notice_text(batch.contact_name, batch.phone, motivos, summary, tasks, family)
-      published = await publish_notice(session, text)
+      text = notice_text(batch.contact_name, batch.phone, motivos, summary, tasks, family, questions)
+      thread = await publish_notice(session, text)
+      published = thread is not None
       if published and motivos:
         # La ventana se cuenta desde el aviso; sin aviso no hay pausa y el asistente sigue respondiendo (RF-05, RF-14).
         await pause_conversation(session, batch.phone, datetime.now(UTC), settings.pause)
+      if thread:
+        # Después de la pausa: si guardar el hilo falla, la derivación igual quedó pausada (D1 del plan 008).
+        await save_notice(session, thread, batch.phone)
   except Exception as exc:
     logger.error("Ha ocurrido un error al avisar a Marco por la conversación de WhatsApp %s: %s", batch.phone, type(exc).__name__)
     return
   if not published:
-    # El número sirve para buscar la conversación; el motivo y los encargos no van al log (RF-14, RF-26).
+    # El número sirve para buscar la conversación; motivos, preguntas y encargos no van al log (RF-14, RF-26, RF-08).
     logger.error("No se publicó el aviso a Marco por la conversación de WhatsApp %s; no se pausa", batch.phone)
 
 async def answer_batch(graph: CompiledStateGraph[MessagesState, CoordinatorContext], batch: Batch, settings: WhatsappSettings) -> None:
@@ -265,8 +269,8 @@ async def answer_batch(graph: CompiledStateGraph[MessagesState, CoordinatorConte
       logger.error("Ha ocurrido un error al responder en WhatsApp: %s", type(exc).__name__)
       return await release(batch, ids)
     respuesta = turn[-1].text if turn else ""
-    motivos, tasks = derivations_of(turn), tasks_of(turn)
-    if not respuesta.strip() and not (motivos or tasks):
+    motivos, tasks, questions = derivations_of(turn), tasks_of(turn), questions_of(turn)
+    if not respuesta.strip() and not (motivos or tasks or questions):
       logger.warning("El asistente devolvió una respuesta vacía en WhatsApp, no se envía nada")
       return await release(batch, ids)
     try:
@@ -292,9 +296,9 @@ async def answer_batch(graph: CompiledStateGraph[MessagesState, CoordinatorConte
       await forget_answer(graph, batch.phone)
     except Exception as exc:
       logger.error("Ha ocurrido un error al enviar la respuesta de WhatsApp: %s", type(exc).__name__)
-    if motivos or tasks:
+    if motivos or tasks or questions:
       # Aunque YCloud rechace la respuesta, Marco igual debe enterarse (RF-08).
-      await notify(graph, batch, motivos, tasks, family, settings)
+      await notify(graph, batch, motivos, tasks, questions, family, settings)
     if sent:
       try:
         inbound = [message for message in batch.messages if message.direction == "inbound"]

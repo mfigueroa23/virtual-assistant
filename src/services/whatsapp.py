@@ -6,7 +6,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.models.whatsapp import WhatsappConversation, WhatsappEvent, WhatsappMessage
+from src.models.whatsapp import WhatsappConversation, WhatsappEvent, WhatsappMessage, WhatsappNotice
 from src.services.property import get_property
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.property import PropertyNotFoundError
@@ -54,6 +54,21 @@ class Batch:
   # Nombre de perfil del contacto, para el aviso a Marco.
   contact_name: str | None = None
 
+@dataclass(frozen = True)
+class NoticeTarget:
+  """Conversación a la que pertenece un aviso de Google Chat."""
+  phone: str
+  business_phone: str
+  contact_name: str | None
+  last_inbound_at: datetime | None
+
+async def channel_enabled(session: AsyncSession) -> bool:
+  # Si falta la property el canal queda apagado: hay que habilitarlo a propósito.
+  try:
+    return (await get_property(session, "whatsapp_enabled")).strip().lower() == "true"
+  except PropertyNotFoundError:
+    return False
+
 async def read_float(session: AsyncSession, key: str, default: float) -> float:
   try:
     return float(await get_property(session, key))
@@ -72,6 +87,10 @@ def next_pause(current: datetime | None, sent_at: datetime, window: timedelta) -
   # Cada mensaje de Marco renueva la ventana desde ese mensaje, pero uno atrasado no la acorta.
   until = sent_at + window
   return until if current is None or until > current else current
+
+def latest_inbound(current: datetime | None, sent_at: datetime) -> datetime:
+  # Un mensaje atrasado no mueve hacia atrás la ventana de 24 h (D4).
+  return sent_at if current is None or sent_at > current else current
 
 def claim_decision(
   processing_since: datetime | None, batch_due_at: datetime | None, paused_until: datetime | None,
@@ -131,6 +150,7 @@ async def add_inbound(
     # Si el contacto cambia su nombre de perfil, el aviso usa el último (D7).
     if contact_name:
       conversation.contact_name = contact_name
+    conversation.last_inbound_at = latest_inbound(conversation.last_inbound_at, message.sent_at)
     if conversation.paused_until is not None and conversation.paused_until > now:
       # Durante la pausa solo se guarda para el historial, sin respuesta.
       await save_message(session, phone, message, "history")
@@ -207,6 +227,39 @@ async def pause_conversation(session: AsyncSession, phone: str, now: datetime, w
     if conversation is None:
       return
     conversation.paused_until = next_pause(conversation.paused_until, now, window)
+    await session.commit()
+  except (SQLAlchemyError, OSError) as exc:
+    raise DatabaseUnavailableError(str(exc)) from exc
+
+async def save_notice(session: AsyncSession, thread: str, phone: str) -> None:
+  """Recuerda el hilo de un aviso para reconocer las respuestas de Marco en él, también tras un reinicio (D1, D3)."""
+  try:
+    await session.execute(insert(WhatsappNotice).values(thread = thread, phone = phone).on_conflict_do_nothing())
+    await session.commit()
+  except (SQLAlchemyError, OSError) as exc:
+    raise DatabaseUnavailableError(str(exc)) from exc
+
+async def find_notice(session: AsyncSession, thread: str) -> NoticeTarget | None:
+  try:
+    row = (await session.execute(
+      select(WhatsappConversation).join(WhatsappNotice, WhatsappNotice.phone == WhatsappConversation.phone)
+      .where(WhatsappNotice.thread == thread)
+    )).scalar_one_or_none()
+  except (SQLAlchemyError, OSError) as exc:
+    raise DatabaseUnavailableError(str(exc)) from exc
+  if row is None:
+    return None
+  return NoticeTarget(row.phone, row.business_phone, row.contact_name, row.last_inbound_at)
+
+async def add_marco_reply(session: AsyncSession, phone: str, message: QueuedMessage) -> None:
+  """Guarda lo que Marco respondió desde Google Chat y reanuda el asistente en la conversación (D5, D6)."""
+  try:
+    conversation = await session.get(WhatsappConversation, phone, with_for_update = True, populate_existing = True)
+    if conversation is None:
+      return
+    # Sin subir epoch: el asistente sigue atendiendo y el mensaje entra al historial en el próximo lote.
+    conversation.paused_until = None
+    await save_message(session, phone, message, "history")
     await session.commit()
   except (SQLAlchemyError, OSError) as exc:
     raise DatabaseUnavailableError(str(exc)) from exc

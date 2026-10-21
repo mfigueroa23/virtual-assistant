@@ -123,10 +123,14 @@ El número está conectado a YCloud en modo coexistencia: la app de WhatsApp Bus
 - **Toma de la conversación:** cuando Marco escribe desde el celular (evento `whatsapp.smb.message.echoes`), el asistente deja de responder esa conversación durante `whatsapp_pause_hours`, contadas desde el último mensaje de Marco. Si estaba preparando una respuesta, la descarta. Los mensajes de la pausa, del contacto y de Marco, pasan al historial para que el asistente tenga el contexto al retomar.
 - **Tipos de mensaje:** texto, imágenes y documentos (se leen como los adjuntos de Google Chat, hasta 20 MB) y notas de voz (las transcribe Gemini). Videos, stickers, ubicaciones, tarjetas de contacto y reacciones quedan en el historial como una línea, pero no generan respuesta por sí solos.
 - **Respuestas:** se envían como texto, en varios mensajes si superan los 4096 caracteres, y los mensajes del contacto se marcan como leídos.
-- **Derivación:** cuando el contacto quiere una reunión o una llamada, pregunta por precios, tiene una urgencia, pregunta algo que el asistente no sabe, insiste en hablar con Marco o pide un encargo que no se puede aceptar, el coordinador usa la tool `derivar_a_marco`. El contacto recibe la respuesta del turno («déjame revisarlo y te escribo»), Marco recibe un aviso y la conversación queda en pausa `whatsapp_pause_hours`, contadas desde el aviso, igual que si Marco hubiera escrito.
-- **Encargos:** lo que el contacto pide hacer, si es de un tipo de `whatsapp_accepted_tasks`, se registra con la tool `registrar_encargo`. El contacto recibe la confirmación («dale, lo hago y te aviso»), Marco recibe un aviso con qué hacer y quién lo pide, y el asistente sigue respondiendo, sin pausa.
+- **Derivación:** cuando el contacto quiere una reunión o una llamada, pregunta por precios, tiene una urgencia, insiste en hablar con Marco o pide un encargo que no se puede aceptar, el coordinador usa la tool `derivar_a_marco`. El contacto recibe la respuesta del turno, Marco recibe un aviso y la conversación queda en pausa `whatsapp_pause_hours`, contadas desde el aviso, igual que si Marco hubiera escrito.
+- **Encargos:** lo que el contacto pide hacer, si es de un tipo de `whatsapp_accepted_tasks`, se registra con la tool `registrar_encargo`. El contacto recibe la confirmación, Marco recibe un aviso con qué hacer y quién lo pide, y el asistente sigue respondiendo, sin pausa.
+- **Consultas:** lo que el asistente no sabe responder (una experiencia, una disponibilidad) lo pregunta a Marco con la tool `consultar_a_marco`. El contacto recibe la respuesta del turno y Marco un aviso con la pregunta; el asistente sigue atendiendo el resto de la conversación, sin pausa.
+- **Respuestas del asistente al derivar, encargar o consultar:** las redacta con sus propias palabras. Las tools le dan el criterio (sin prometer plazos ni confirmar lo que Marco debe decidir) y nunca una frase para copiar.
 - **Familia:** los números de `whatsapp_family_phones` reciben el trato de `whatsapp_family_instructions` y pueden pedir cualquier encargo, sin la lista de aceptables. Las reglas de seguridad del prompt y la derivación son las mismas para todos. El resto de los contactos recibe trato profesional.
-- **Aviso:** un solo mensaje por turno en `whatsapp_notify_space`, con el nombre de perfil del contacto (o «Sin nombre»), «(familia)» si corresponde, su número y el enlace `https://wa.me/<número sin +>`. Si hubo derivación trae los motivos y un resumen de la conversación redactado por Gemini (o «No se pudo resumir la conversación.»); si hubo encargos, la lista. Si falla, se intenta 3 veces, con esperas de 1 y 2 segundos. Si no se publica, no hay pausa y queda en el log con el número del contacto, sin el contenido. Si Marco escribe mientras el asistente prepara la respuesta, no hay respuesta ni aviso. Si YCloud rechaza la respuesta, el aviso se publica igual.
+- **Aviso:** un solo mensaje por turno en `whatsapp_notify_space`, con el nombre de perfil del contacto (o «Sin nombre»), «(familia)» si corresponde, su número y el enlace `https://wa.me/<número sin +>`. Si hubo derivación trae los motivos y un resumen de la conversación redactado por Gemini (o «No se pudo resumir la conversación.»); si hubo consultas, las preguntas («Te consulta:»); si hubo encargos, la lista. Siempre termina con «Responde en este hilo para contestarle por WhatsApp.». Si falla, se intenta 3 veces, con esperas de 1 y 2 segundos. Si no se publica, no hay pausa y queda en el log con el número del contacto, sin el contenido. Si Marco escribe mientras el asistente prepara la respuesta, no hay respuesta ni aviso. Si YCloud rechaza la respuesta, el aviso se publica igual.
+- **Responder desde Google Chat:** lo que Marco escribe **en el hilo** de un aviso (con «Responder en hilo», no citando el mensaje) le llega al contacto por WhatsApp. Gemini lo redacta en el tono de la conversación (familiar o profesional) sin agregar ni quitar datos, y el hilo responde con el texto enviado. Cada mensaje en el hilo se envía por separado, queda en el historial como mensaje de Marco y levanta la pausa del chat, así que el asistente vuelve a atenderlo. Lo que Marco escribe fuera de los hilos de avisos sigue yendo al «Agente Interno».
+- **Ventana de 24 h:** WhatsApp solo deja enviar texto libre por la API hasta 24 h después del último mensaje del contacto. Fuera de esa ventana no se envía nada y el hilo responde con el enlace `wa.me` para escribirle desde el celular. Tampoco se envía si el canal está apagado, si el mensaje no tiene texto o si falla la redacción o YCloud: el hilo lo dice y el log no guarda el texto. Los avisos publicados antes de la 3.7.0 no aceptan respuestas.
 - **Fallos:** si el LLM, la base de datos o YCloud fallan, o se supera `whatsapp_timeout`, el contacto no recibe nada y queda en el log sin el contenido del mensaje. Marco responde desde su celular.
 - **Conexiones salientes:** las llamadas a YCloud y a Google salen solo por IPv4, porque el cluster no tiene ruta IPv6, y reintentan la conexión hasta 2 veces si no logran conectar. Una petición que ya se envió no se repite, así que no se duplican mensajes.
 - **Reinicios:** al arrancar se retoman los lotes con mensajes de los últimos 30 minutos; los más viejos quedan solo para el historial.
@@ -148,7 +152,7 @@ Para activar el canal:
    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
    ```
 
-5. Para la derivación y los encargos, abrir en Google Chat el mensaje directo con la app y copiar el id de la URL (`https://chat.google.com/…/dm/<id>`). Cargar el space de aviso, los encargos aceptables y la familia:
+5. Para la derivación, los encargos, las consultas y las respuestas desde el hilo, abrir en Google Chat el mensaje directo con la app y copiar el id de la URL (`https://chat.google.com/…/dm/<id>`). Cargar el space de aviso, los encargos aceptables y la familia:
 
    ```sql
    INSERT INTO property (key, value) VALUES
@@ -165,11 +169,27 @@ Para activar el canal:
    UPDATE agents SET prompt = prompt || E'\n\n'
      'Trato: con quien no sea de tu familia, responde de forma cordial y profesional.\n\n'
      'Derivar: usa derivar_a_marco cuando el contacto quiera agendar una reunión o una llamada, pregunte por precios o '
-     'condiciones, tenga una urgencia, pregunte algo que no está en tu información, quiera hablar contigo en persona o '
-     'pida un encargo que no puedes aceptar. En ese turno respóndele que lo revisarás y le escribirás pronto, sin '
-     'prometer plazos.\n\n'
+     'condiciones, tenga una urgencia, quiera hablar contigo en persona o pida un encargo que no puedes aceptar.\n\n'
+     'Consultar: si te pregunta algo que no está en tu información, usa consultar_a_marco con la pregunta y sigue '
+     'atendiendo el resto de la conversación.\n\n'
      'Encargos: si te pide hacer algo que puedes aceptar según tus instrucciones, usa registrar_encargo con lo que hay '
-     'que hacer y confírmale que lo harás, sin prometer plazos.'
+     'que hacer.\n\n'
+     'En todos los casos responde con tus propias palabras, según lo que pidió y el tono de la conversación, sin '
+     'prometer plazos ni repetir fórmulas.'
+   WHERE name = 'Agente WhatsApp' AND area_id IS NULL;
+   ```
+
+6. Al pasar de la 3.6.0 a la 3.7.0, el prompt que ya está en la base trae frases de ejemplo que el modelo copia y deriva lo que no sabe. Este `UPDATE` cambia esas tres reglas; cada patrón debe coincidir una sola vez, así que conviene revisar el resultado con un `SELECT` antes:
+
+   ```sql
+   UPDATE agents SET prompt = regexp_replace(regexp_replace(regexp_replace(prompt,
+     'Responde con calidez y brevedad, por ejemplo:[^\n]*',
+     'Responde con calidez y brevedad, con tus propias palabras y sin repetir fórmulas.'),
+     ' y di que lo revisas y respondes pronto, sin prometer plazos\.',
+     ' y responde con tus propias palabras, sin prometer plazos.'),
+     'Si no tienes información para una consulta profesional[^\n]*',
+     'Si no tienes información para una consulta profesional, usa consultar_a_marco con la pregunta y sigue atendiendo '
+     'el resto de la conversación. Si insiste en hablar contigo, usa derivar_a_marco.')
    WHERE name = 'Agente WhatsApp' AND area_id IS NULL;
    ```
 
@@ -185,9 +205,10 @@ Para apagarlo, `whatsapp_enabled = false`: aplica desde el siguiente evento.
 | `faq_categories` | Categorías de preguntas frecuentes de cada área |
 | `faqs` | Preguntas frecuentes con su embedding. `status` es `re-index` si falta generar el embedding e `index` si ya está indexada |
 | `cors_origins` | Orígenes que pueden consumir la API desde el navegador (CORS). `enabled` es `true` por defecto |
-| `whatsapp_conversations` | Una fila por contacto de WhatsApp: su nombre de perfil, hasta cuándo está en pausa, cuándo vence la espera del lote, qué proceso lo responde y un contador (`epoch`) que sube con cada mensaje de Marco |
+| `whatsapp_conversations` | Una fila por contacto de WhatsApp: su nombre de perfil, cuándo escribió por última vez (para la ventana de 24 h), hasta cuándo está en pausa, cuándo vence la espera del lote, qué proceso lo responde y un contador (`epoch`) que sube con cada mensaje de Marco |
 | `whatsapp_messages` | Cola de mensajes de WhatsApp pendientes de responder o de pasar al historial. Las filas se borran cuando quedan en el historial del checkpointer |
 | `whatsapp_events` | Ids de los eventos de YCloud ya recibidos, para descartar reintentos. Se borran a los 7 días |
+| `whatsapp_notices` | Hilo de Google Chat de cada aviso de WhatsApp y el contacto al que pertenece, para enviarle lo que Marco responde en ese hilo. Se borran junto con la conversación |
 
 ### Orígenes CORS
 

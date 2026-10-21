@@ -124,8 +124,11 @@ async def download(resource_name: str, token: str, http: httpx.AsyncClient) -> b
       chunks.append(chunk)
   return b"".join(chunks)
 
-async def create_message(space: str, text: str, token: str, http: httpx.AsyncClient) -> None:
+async def create_message(space: str, text: str, token: str, http: httpx.AsyncClient) -> str | None:
+  """Publica el mensaje y devuelve el hilo que abrió, o None si la respuesta no lo trae."""
   # Sin "thread" Google Chat publica el mensaje fuera del hilo original.
   headers = { "Authorization": f"Bearer {token}" }
   response = await http.post(f"{CHAT_API_URL}/{space}/messages", json = { "text": text }, headers = headers)
   response.raise_for_status()
+  thread = response.json().get("thread") or {}
+  return thread.get("name")
