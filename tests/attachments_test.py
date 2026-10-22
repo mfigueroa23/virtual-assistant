@@ -87,6 +87,25 @@ async def test_lee_word_excel_powerpoint_y_texto_en_memoria():
     assert blocks[4] == "[Archivo adjunto: notas.txt]\ncañón"
 
 
+# PNG de 1×1 escrito a mano: Pillow es transitiva y el test no la importa (D5 de la spec 010).
+PNG_1X1 = (b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x00\x00\x00\x00:~\x9bU"
+           b"\x00\x00\x00\nIDATx\x9cc`\x00\x00\x00\x02\x00\x01H\xaf\xa4q\x00\x00\x00\x00IEND\xaeB`\x82")
+
+
+@pytest.mark.anyio
+async def test_u_01_pptx_con_imagen_extrae_solo_el_texto():
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    slide.shapes.add_picture(io.BytesIO(PNG_1X1), Inches(1), Inches(1))  # python-pptx lee la imagen con Pillow
+    slide.shapes.add_textbox(Inches(1), Inches(3), Inches(4), Inches(1)).text_frame.text = "Diagrama del portal"
+    buffer = io.BytesIO()
+    presentation.save(buffer)
+
+    text = await read([Attachment("con-imagen.pptx", "application/octet-stream", "r/ppt")], {"r/ppt": buffer.getvalue()})
+
+    assert text == "[Archivo adjunto: con-imagen.pptx]\nDiapositiva 1\nDiagrama del portal"
+
+
 @pytest.mark.parametrize("name, content_type, expected", [
     ("foto.JPG", "image/jpeg", "image/jpeg"),
     ("datos.csv", "application/octet-stream", "text/csv"),

@@ -30,7 +30,7 @@ T01 ─┬─► T02 ─┬─► T04 ─► T05 ─► T06
 
 ## Fase 1 — Dependencias
 
-- [ ] **T02 — Actualizar pillow y certifi en `uv.lock`**
+- [x] **T02 — Actualizar pillow y certifi en `uv.lock`**
   - **RF:** RF-01, RF-02, RF-03, RF-04, RF-05
   - **Depende de:** T01 (puede ir en paralelo con T03)
   - **Alcance:**
