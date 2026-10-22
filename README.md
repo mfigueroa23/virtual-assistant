@@ -324,6 +324,8 @@ Configuración necesaria en GitHub:
 | Secret | `LOCAL_NETWORK` | Service key de Twingate para llegar al cluster |
 | Secret | `KUBE_CONFIG` | kubeconfig del cluster |
 
+`uv.lock` es la única fuente de las versiones instaladas: la imagen y el CI usan `uv sync --locked` y el repo no versiona un `requirements.txt`. `.github/dependabot.yml` declara el ecosistema `uv` para que Dependabot abra los PRs de seguridad sobre `uv.lock`. No abre PRs de versiones nuevas (`open-pull-requests-limit: 0`).
+
 Las migraciones **no** se ejecutan en el pipeline: el contenedor las aplica al arrancar. `entrypoint.sh` ejecuta `alembic upgrade head` (no hace nada si la base de datos ya está en la última migración) y luego inicia la API. Si la migración falla, el contenedor no arranca. Con varias réplicas, un advisory lock de PostgreSQL en `alembic/env.py` hace que solo una las aplique a la vez.
 
 ## Estructura
