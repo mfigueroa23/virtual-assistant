@@ -63,7 +63,7 @@ T01 ─┬─► T02 ─┬─► T04 ─► T05 ─► T06
 
 ## Fase 3 — Verificación y release
 
-- [ ] **T04 — Puerta de calidad y build de la imagen**
+- [x] **T04 — Puerta de calidad y build de la imagen**
   - **RF:** RF-04
   - **Depende de:** T02, T03
   - **Alcance:** checklist de `AGENTS.md` y build local de la imagen (D8, D9).
@@ -74,7 +74,7 @@ T01 ─┬─► T02 ─┬─► T04 ─► T05 ─► T06
       `docker run --rm --entrypoint python virtual-assistant:010 -c "import PIL, certifi; print(PIL.__version__, certifi.__version__)"`
       muestra `13.0.0 2026.10.19`.
 
-- [ ] **T05 — Subir la versión a 3.8.1**
+- [x] **T05 — Subir la versión a 3.8.1**
   - **RF:** —
   - **Depende de:** T04
   - **Alcance:** `version = "3.8.1"` en `pyproject.toml` y `uv sync` (D7, constitución 9).
