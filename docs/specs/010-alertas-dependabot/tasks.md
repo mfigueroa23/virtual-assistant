@@ -47,7 +47,7 @@ T01 ─┬─► T02 ─┬─► T04 ─► T05 ─► T06
 
 ## Fase 2 — Fuente única y Dependabot
 
-- [ ] **T03 — Eliminar `requirements.txt`, configurar Dependabot y actualizar el README**
+- [x] **T03 — Eliminar `requirements.txt`, configurar Dependabot y actualizar el README**
   - **RF:** RF-06, RF-07, RF-08, RF-09
   - **Depende de:** T01 (puede ir en paralelo con T02)
   - **Alcance:**
