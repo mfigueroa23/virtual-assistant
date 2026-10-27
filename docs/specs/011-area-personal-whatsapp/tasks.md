@@ -149,7 +149,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
     diferencias, `uv run alembic current` muestra la revisión nueva en la BD local y el script SQL termina sin
     errores.
 
-- [ ] **T10 — Subir la versión a 3.9.0**
+- [x] **T10 — Subir la versión a 3.9.0**
   - **RF:** —
   - **Depende de:** T09
   - **Alcance:** `version = "3.9.0"` en `pyproject.toml` y `uv sync`.
