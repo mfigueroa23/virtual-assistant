@@ -17,7 +17,7 @@ async def delegar_area(area: str, consulta: str, runtime: ToolRuntime[Coordinato
   if sub_agent is None:
     return f"El área '{area}' no existe. Áreas disponibles: {', '.join(context.sub_agents)}."
   # Solo el área interno «Conocimiento» usa el grafo con las tools de escritura (D3, D4 del plan 009).
-  is_knowledge = context.audiencia == "interno" and sub_agent.area == CONOCIMIENTO
+  is_knowledge = sub_agent.audiencia == "interno" and sub_agent.area == CONOCIMIENTO
   result = await (knowledge_graph if is_knowledge else sub_agent_graph).ainvoke(
     { "messages": [HumanMessage(consulta)] },
     context = AgentContext(
@@ -25,7 +25,7 @@ async def delegar_area(area: str, consulta: str, runtime: ToolRuntime[Coordinato
       system_prompt = sub_agent.prompt,
       embeddings = context.embeddings,
       area = sub_agent.area,
-      audiencia = context.audiencia,
+      audiencia = sub_agent.audiencia,
       turn_id = context.turn_id
     )
   )

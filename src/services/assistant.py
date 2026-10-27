@@ -13,7 +13,7 @@ async def run_turn(
   graph: CompiledStateGraph[MessagesState, CoordinatorContext],
   session: AsyncSession,
   coordinator: str,
-  audiencia: str,
+  audiencias: Sequence[str],
   thread_id: str,
   mensaje: str,
   previous: Sequence[AnyMessage] = (),
@@ -24,9 +24,10 @@ async def run_turn(
   """Ejecuta un turno y devuelve solo sus mensajes: llamadas a tools, sus resultados y la respuesta final (D3)."""
   llm = await LLM.create(session)
   prompt = await get_prompt(session, coordinator)
-  sub_agents = await list_sub_agents(session, audiencia = audiencia)
+  # Se leen en cada turno: un área creada desde «Conocimiento» queda disponible sin reiniciar (D11 del plan 011).
+  sub_agents = await list_sub_agents(session, audiencias = audiencias)
   if not sub_agents:
-    raise AgentNotFoundError(f"sub-agentes de la audiencia '{audiencia}'")
+    raise AgentNotFoundError(f"sub-agentes de las audiencias {list(audiencias)}")
   # Las áreas excluidas no se ofrecen; el turno sigue aunque no quede ninguna (D5 del plan 009).
   available = [sub_agent for sub_agent in sub_agents if sub_agent.area not in exclude]
   # Un id propio marca dónde empieza el turno dentro del historial completo que devuelve el grafo.
@@ -39,7 +40,6 @@ async def run_turn(
       llm = llm.llm,
       system_prompt = prompt,
       embeddings = llm.embeddings,
-      audiencia = audiencia,
       sub_agents = { sub_agent.area: sub_agent for sub_agent in available },
       instructions = instructions,
       turn_id = str(turn.id)
@@ -53,12 +53,12 @@ async def ask(
   graph: CompiledStateGraph[MessagesState, CoordinatorContext],
   session: AsyncSession,
   coordinator: str,
-  audiencia: str,
+  audiencias: Sequence[str],
   thread_id: str,
   mensaje: str,
   previous: Sequence[AnyMessage] = (),
   turn_id: str | None = None,
   exclude: Collection[str] = ()
 ) -> str:
-  turn = await run_turn(graph, session, coordinator, audiencia, thread_id, mensaje, previous, turn_id = turn_id, exclude = exclude)
+  turn = await run_turn(graph, session, coordinator, audiencias, thread_id, mensaje, previous, turn_id = turn_id, exclude = exclude)
   return turn[-1].text

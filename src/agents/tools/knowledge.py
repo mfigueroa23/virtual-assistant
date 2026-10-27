@@ -2,7 +2,7 @@ from typing import Literal
 from langchain.tools import ToolRuntime, tool
 from src.agents.context import AgentContext
 from src.database.session import SessionLocal
-from src.services.knowledge import Action, create_proposal, list_knowledge, search_knowledge
+from src.services.knowledge import AUDIENCIAS, Action, create_area_proposal, create_proposal, list_knowledge, search_knowledge
 
 ACCIONES: dict[str, Action] = { "crear": "create", "editar": "update", "borrar": "delete", "crear_categoria": "category" }
 # La tool no escribe: Marco confirma con el botón de la tarjeta (RF-07). El modelo no debe dar el cambio por hecho.
@@ -14,18 +14,23 @@ SIN_TURNO = "No se pueden proponer cambios en esta conversación."
 
 @tool(parse_docstring=True)
 async def ver_conocimiento(runtime: ToolRuntime[AgentContext]) -> str:
-  """Lista las áreas del conocimiento con sus categorías y cuántas preguntas frecuentes tiene cada una."""
+  """Lista las áreas del conocimiento de cada audiencia con sus categorías y cuántas preguntas frecuentes tiene cada una."""
   async with SessionLocal() as session:
     areas = await list_knowledge(session)
   if not areas:
     return "No hay áreas de conocimiento cargadas."
-  lines: list[str] = []
-  for area in areas:
-    lines.append(f"- {area.name}: {area.description}")
-    lines.extend(f"  - {category.name} ({category.faqs})" for category in area.categories)
-    if not area.categories:
-      lines.append("  - (sin categorías)")
-  return "\n".join(lines)
+  # Un bloque por audiencia (RF-08 de la spec 011).
+  blocks: list[str] = []
+  for audiencia in AUDIENCIAS:
+    lines = [f"Audiencia {audiencia}:"]
+    for area in (area for area in areas if area.audiencia == audiencia):
+      lines.append(f"- {area.name}: {area.description}")
+      lines.extend(f"  - {category.name} ({category.faqs})" for category in area.categories)
+      if not area.categories:
+        lines.append("  - (sin categorías)")
+    if len(lines) > 1:
+      blocks.append("\n".join(lines))
+  return "\n\n".join(blocks)
 
 @tool(parse_docstring=True)
 async def buscar_conocimiento(consulta: str, runtime: ToolRuntime[AgentContext]) -> str:
@@ -40,7 +45,7 @@ async def buscar_conocimiento(consulta: str, runtime: ToolRuntime[AgentContext])
   if not hits:
     return "No se encontraron preguntas frecuentes relacionadas."
   return "\n\n---\n\n".join(
-    f"[id {hit.id}] {hit.area} › {hit.category}\nPregunta: {hit.question}\nRespuesta: {hit.answer}" for hit in hits
+    f"[id {hit.id}] {hit.audiencia} · {hit.area} › {hit.category}\nPregunta: {hit.question}\nRespuesta: {hit.answer}" for hit in hits
   )
 
 @tool(parse_docstring=True)
@@ -79,4 +84,28 @@ async def proponer_cambio(
     )
   return result if isinstance(result, str) else GUIA_PROPUESTA
 
-KNOWLEDGE_TOOLS = [ver_conocimiento, buscar_conocimiento, proponer_cambio]
+@tool(parse_docstring=True)
+async def proponer_area(
+  nombre: str,
+  audiencia: Literal["externo", "interno", "personal"],
+  descripcion: str,
+  runtime: ToolRuntime[AgentContext]
+) -> str:
+  """Propone crear un área nueva con su sub-agente. Nada se crea hasta que Marco lo confirme en la tarjeta.
+
+  Úsala cuando Marco pida crear un área. Después se le agregan categorías y preguntas con proponer_cambio.
+
+  Args:
+      nombre: Nombre del área, corto y sin la palabra Agente; no puede repetir el de otra área.
+      audiencia: externo (chat web del portafolio y WhatsApp), interno (solo Marco en Google Chat) o personal (cualquier contacto de WhatsApp, nunca el chat web).
+      descripcion: Qué cubre el área, en una frase; los coordinadores la usan para elegir a qué área delegar.
+  """
+  context = runtime.context
+  # Sin turno la propuesta no tendría tarjeta y Marco no podría confirmarla (D2 del plan 009).
+  if not context.turn_id:
+    return SIN_TURNO
+  async with SessionLocal() as session:
+    result = await create_area_proposal(session, nombre, audiencia, descripcion, context.turn_id)
+  return result if isinstance(result, str) else GUIA_PROPUESTA
+
+KNOWLEDGE_TOOLS = [ver_conocimiento, buscar_conocimiento, proponer_cambio, proponer_area]

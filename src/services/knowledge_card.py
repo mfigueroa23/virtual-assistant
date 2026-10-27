@@ -16,6 +16,7 @@ TITULOS = {
   "update": "Editar pregunta frecuente",
   "delete": "Borrar pregunta frecuente",
   "category": "Nueva categoría",
+  "area": "Nueva área",
 }
 TITULO_CONSULTA = "Propuesta de pregunta frecuente"
 # interno: cambio pedido al «Agente Interno»; consulta: propuesta desde el hilo de una consulta (RF-07, RF-21).
@@ -33,11 +34,20 @@ APLICADO = {
   "update": "Listo: se guardó la pregunta frecuente editada.",
   "delete": "Listo: se borró la pregunta frecuente.",
   "category": "Listo: se creó la categoría.",
+  "area": "Listo: se creó el área con su sub-agente. Los coordinadores de su audiencia la usan desde el próximo mensaje.",
 }
 NOTAS: dict[Outcome, str] = {
   "discarded": "Descartada: no se cambió nada.",
   "duplicate": "No se aplicó: ya existe con ese nombre o esa pregunta en la categoría.",
   "stale": "No se aplicó: la pregunta frecuente cambió o se borró desde que se propuso.",
+}
+# Una propuesta de área choca con el nombre de un área o de un agente (D10 del plan 011).
+DUPLICADO_AREA = "No se aplicó: ya existe un área o un agente con ese nombre."
+# Quién ve un área según su audiencia: Marco lo lee antes de confirmar (riesgos del plan 011).
+QUIEN_VE = {
+  "externo": "La ven el chat web del portafolio y cualquier contacto de WhatsApp.",
+  "interno": "Solo la ves tú, desde Google Chat.",
+  "personal": "La ve cualquier contacto de WhatsApp, nunca el chat web.",
 }
 SIN_EMBEDDING = "No se pudo preparar la búsqueda de la pregunta y no se aplicó nada. Intenta de nuevo."
 NO_SE_PUDO = "No se pudo aplicar el cambio. Intenta de nuevo."
@@ -63,7 +73,12 @@ def button(text: str, function_url: str, proposal: Proposal, decision: str) -> d
 def proposal_card(proposal: Proposal, function_url: str, note: str = "") -> dict[str, Any]:
   """Elemento de cardsV2 de una propuesta: muestra el cambio y, si sigue pendiente, sus botones."""
   sections: list[dict[str, Any]] = []
-  if proposal.action == "category":
+  if proposal.action == "area":
+    sections.append({ "widgets": [
+      field("Nombre", proposal.area), field("Audiencia", proposal.audiencia), field("Descripción", proposal.description),
+      { "textParagraph": { "text": escaped(QUIEN_VE.get(proposal.audiencia, "")) } }
+    ] })
+  elif proposal.action == "category":
     sections.append({ "widgets": [{ "textParagraph": {
       "text": f"Se creará la categoría <b>{escaped(proposal.category)}</b> en {escaped(proposal.area)}."
     } }] })
@@ -84,8 +99,13 @@ def proposal_card(proposal: Proposal, function_url: str, note: str = "") -> dict
     ] } }] })
   title = TITULO_CONSULTA if proposal.origin == "consulta" else TITULOS.get(proposal.action, TITULOS["create"])
   return { "cardId": proposal.id, "card": {
-    "header": { "title": title, "subtitle": f"{proposal.area} › {proposal.category}" }, "sections": sections
+    "header": { "title": title, "subtitle": subtitle(proposal) }, "sections": sections
   } }
+
+def subtitle(proposal: Proposal) -> str:
+  # audiencia · área › categoría (RF-11, RF-25 de la spec 011); sin audiencia, como antes de la spec (U-T9).
+  where = f"{proposal.audiencia} · {proposal.area}" if proposal.audiencia else proposal.area
+  return where if proposal.action == "area" else f"{where} › {proposal.category}"
 
 async def knowledge_allowed(session: AsyncSession, space: str | None) -> bool:
   """El conocimiento solo se ve y se cambia desde el space de aviso; sin la property, desde ninguno (RF-03, RF-04)."""
@@ -106,6 +126,8 @@ async def turn_cards(session: AsyncSession, turn_id: str) -> list[dict[str, Any]
 def note_of(proposal: Proposal, outcome: Outcome) -> str:
   if outcome == "applied":
     return APLICADO.get(proposal.action, APLICADO["create"])
+  if outcome == "duplicate" and proposal.action == "area":
+    return DUPLICADO_AREA
   # Ya resuelta: la nota sale de su estado (RF-18).
   return NOTAS.get(outcome, "")
 
@@ -137,12 +159,14 @@ async def handle_click(session: AsyncSession, event: AddonEvent) -> dict[str, An
     return chat_reply(SOLO_AVISOS)
   function_url = await get_property(session, "google_chat_audience")
   current = None
-  # Los errores solo dejan el id y el tipo en el log: la pregunta y la respuesta no (RF-27).
+  # Los errores solo dejan el id y el tipo en el log: ni la pregunta, ni la respuesta, ni el nombre o la descripción de un
+  # área (RF-27 de la spec 009, RF-29 de la spec 011).
   try:
     current = await get_proposal(session, proposal_id)
     if current is None:
       return chat_reply(NO_EXISTE)
     embedding = None
+    # Solo las FAQs nuevas o editadas llevan embedding: las categorías, los borrados y las áreas no (RF-22 de la spec 011).
     if decision == "apply" and current.status == "pending" and current.action in ("create", "update"):
       try:
         embedding = await embedding_of(session, current)

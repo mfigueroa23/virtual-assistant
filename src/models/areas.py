@@ -5,7 +5,8 @@ from src.models.base import Base
 class Area(Base):
   __tablename__ = "areas"
   __table_args__ = (
-    CheckConstraint("audiencia IN ('externo', 'interno')", name="ck_areas_audiencia"),
+    # personal: áreas que solo ve el «Agente WhatsApp», junto con las externo (RF-01 de la spec 011).
+    CheckConstraint("audiencia IN ('externo', 'interno', 'personal')", name="ck_areas_audiencia"),
   )
 
   id: Mapped[int] = mapped_column(primary_key = True)
