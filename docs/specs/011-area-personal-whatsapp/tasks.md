@@ -18,7 +18,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
 
 ## Fase 0 — Gate
 
-- [ ] **T01 — Cerrar la aprobación del plan y del esquema**
+- [x] **T01 — Cerrar la aprobación del plan y del esquema**
   - **RF:** —
   - **Depende de:** —
   - **Alcance:** el usuario aprobó la spec el 2026-10-26. Faltan tres aprobaciones:

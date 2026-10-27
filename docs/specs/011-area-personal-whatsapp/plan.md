@@ -1,7 +1,7 @@
 # Plan 011 — Audiencia personal para WhatsApp y administración de todo el conocimiento
 
 - **Spec:** [spec.md](spec.md) (approved 2026-10-26)
-- **Status:** Draft
+- **Status:** Approved (2026-10-27: esquema, prompt base de D7 y D2 aprobados)
 - **Version:** 3.9.0 (feat → minor, desde 3.8.1)
 
 El plan respeta la constitución:
