@@ -28,7 +28,7 @@ from src.utils.exceptions.property import PropertyNotFoundError
 
 logger = logging.getLogger(__name__)
 
-AUDIENCIA = "interno"
+AUDIENCIAS = ("interno",)
 COORDINADOR = "Agente Interno"
 NO_DISPONIBLE = "Servicio no disponible. Intenta de nuevo más tarde"
 DEMORA = "Me tomó demasiado tiempo revisar tu mensaje. Intenta de nuevo, por ejemplo con un archivo más pequeño"
@@ -136,7 +136,7 @@ async def process(graph: CompiledStateGraph[MessagesState, CoordinatorContext], 
         mensaje = f"{mensaje or SIN_TEXTO}\n\n{await read_files(session, adjuntos)}"
       # Fuera del space de aviso el «Agente Interno» no ve el sub-agente de conocimiento (D5 del plan 009).
       exclude = () if await knowledge_allowed(session, space) else (CONOCIMIENTO,)
-      text = await ask(graph, session, COORDINADOR, AUDIENCIA, thread_id, mensaje, turn_id = turn_id, exclude = exclude)
+      text = await ask(graph, session, COORDINADOR, AUDIENCIAS, thread_id, mensaje, turn_id = turn_id, exclude = exclude)
       return ChatAnswer(text, await turn_cards(session, turn_id))
   except TimeoutError:
     logger.warning("Se superaron los %s segundos para responder en Google Chat", maximum)

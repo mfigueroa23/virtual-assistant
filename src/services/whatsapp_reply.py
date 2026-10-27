@@ -33,7 +33,8 @@ from src.utils.exceptions.property import PropertyNotFoundError
 logger = logging.getLogger(__name__)
 
 COORDINADOR = "Agente WhatsApp"
-AUDIENCIA = "externo"
+# Las áreas personal junto con las externo, igual para todos los contactos, sean o no familia (D3 del plan 011).
+AUDIENCIAS = ("personal", "externo")
 ENTRANTE = "whatsapp.inbound_message.received"
 ECHO = "whatsapp.smb.message.echoes"
 ESTADO = "whatsapp.message.updated"
@@ -253,7 +254,7 @@ async def answer_batch(graph: CompiledStateGraph[MessagesState, CoordinatorConte
         # Encargos aceptables y trato familiar, leídos en cada turno (D14, D17).
         instructions, family = await turn_instructions(session, batch.phone)
         turn = await run_turn(
-          graph, session, COORDINADOR, AUDIENCIA, thread_key(batch.phone), text, previous = previous, instructions = instructions
+          graph, session, COORDINADOR, AUDIENCIAS, thread_key(batch.phone), text, previous = previous, instructions = instructions
         )
     except TimeoutError:
       logger.warning("Se superó el tiempo máximo de %s segundos para responder en WhatsApp", settings.maximum)

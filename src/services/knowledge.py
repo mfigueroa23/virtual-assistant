@@ -64,7 +64,7 @@ class Resolution:
 
 def as_proposal(row: KnowledgeProposal, area: str) -> Proposal:
   return Proposal(
-    row.id, row.origin, row.action, area, row.category, row.faq_id, row.question, row.answer,
+    row.id, row.origin, row.action, area, row.category or "", row.faq_id, row.question, row.answer,
     row.previous_question, row.previous_answer, row.status
   )
 
@@ -186,15 +186,17 @@ async def category_id(session: AsyncSession, area_id: int, name: str) -> int | N
   return await session.scalar(select(FaqCategory.id).where(FaqCategory.area_id == area_id, FaqCategory.name == name))
 
 async def apply(session: AsyncSession, row: KnowledgeProposal, embedding: list[float] | None) -> Outcome:
+  # ck_knowledge_proposals_area asegura el área y la categoría de las propuestas de FAQs y categorías.
+  area_id, name = cast(int, row.area_id), cast(str, row.category)
   if row.action == "category":
-    if await category_id(session, row.area_id, row.category) is not None:
+    if await category_id(session, area_id, name) is not None:
       return "duplicate"
-    session.add(FaqCategory(area_id = row.area_id, name = row.category))
+    session.add(FaqCategory(area_id = area_id, name = name))
     return "applied"
   if row.action == "create":
-    category = await category_id(session, row.area_id, row.category)
+    category = await category_id(session, area_id, name)
     if category is None:
-      created = FaqCategory(area_id = row.area_id, name = row.category)
+      created = FaqCategory(area_id = area_id, name = name)
       session.add(created)
       await session.flush()
       category = created.id

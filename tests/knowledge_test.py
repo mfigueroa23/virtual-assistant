@@ -7,14 +7,15 @@ from src.agents import coordinator, graph
 from src.agents.context import AgentContext, CoordinatorContext
 from src.agents.coordinator import coordinator_builder
 from src.agents.tools import delegate
+from src.agents.tools import faq as faq_tools
 from src.agents.tools import knowledge as knowledge_tools
 from src.services import assistant
 from src.services.agents import SubAgentConfig
 from src.services.knowledge import AreaSummary, CategorySummary, KnowledgeHit, Proposal
 from src.utils.exceptions.agents import AgentNotFoundError
 
-CONOCIMIENTO = SubAgentConfig("Agente Conocimiento", "Administra las FAQs", "Conocimiento", "Conocimiento del asistente")
-OTRA = SubAgentConfig("Agente Soporte", "Ayuda", "Soporte", "Soporte interno")
+CONOCIMIENTO = SubAgentConfig("Agente Conocimiento", "Administra las FAQs", "Conocimiento", "Conocimiento del asistente", "interno")
+OTRA = SubAgentConfig("Agente Soporte", "Ayuda", "Soporte", "Soporte interno", "interno")
 
 
 def tools_of(compiled) -> list[str]:
@@ -110,8 +111,8 @@ async def test_u_k2_delegar_area_elige_el_grafo_y_pasa_el_turno(monkeypatch, aud
     grafos = {"knowledge": FakeSubAgentGraph(), "faq": FakeSubAgentGraph()}
     monkeypatch.setattr(delegate, "knowledge_graph", grafos["knowledge"])
     monkeypatch.setattr(delegate, "sub_agent_graph", grafos["faq"])
-    sub_agent = SubAgentConfig("Agente", "prompt", area, "desc")
-    context = CoordinatorContext(llm = cast(Any, None), system_prompt = "", embeddings = cast(Any, None), audiencia = audiencia,
+    sub_agent = SubAgentConfig("Agente", "prompt", area, "desc", audiencia)
+    context = CoordinatorContext(llm = cast(Any, None), system_prompt = "", embeddings = cast(Any, None),
                                  sub_agents = {area: sub_agent}, turn_id = "turno-7")
 
     respuesta = await cast(Any, delegate.delegar_area).coroutine(area = area, consulta = "¿qué hay?", runtime = SimpleNamespace(context = context))
@@ -119,6 +120,38 @@ async def test_u_k2_delegar_area_elige_el_grafo_y_pasa_el_turno(monkeypatch, aud
     assert respuesta == "respuesta"
     assert [context.turn_id for context in grafos[expected].contexts] == ["turno-7"]
     assert grafos["faq" if expected == "knowledge" else "knowledge"].contexts == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("area", ["Amigos", "Experiencia"])
+async def test_u_p4_delegar_area_pasa_la_audiencia_del_area_y_no_la_del_coordinador(monkeypatch, area):
+    grafo = FakeSubAgentGraph()
+    monkeypatch.setattr(delegate, "sub_agent_graph", grafo)
+    sub_agents = {"Amigos": SubAgentConfig("Agente Amigos", "prompt", "Amigos", "Amigos", "personal"),
+                  "Experiencia": SubAgentConfig("Agente Experiencia", "prompt", "Experiencia", "Perfil", "externo")}
+    context = CoordinatorContext(llm = cast(Any, None), system_prompt = "", embeddings = cast(Any, None), sub_agents = sub_agents)
+
+    await cast(Any, delegate.delegar_area).coroutine(area = area, consulta = "¿qué hay?", runtime = SimpleNamespace(context = context))
+
+    assert [(context.area, context.audiencia) for context in grafo.contexts] == [(area, sub_agents[area].audiencia)]
+
+
+@pytest.mark.anyio
+async def test_u_p5_search_faq_busca_en_el_area_y_la_audiencia_del_sub_agente(monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    async def fake_search_faqs(session, vector, area, audiencia):
+        calls.append((area, audiencia))
+        return []
+
+    monkeypatch.setattr(faq_tools, "SessionLocal", FakeSessionLocal)
+    monkeypatch.setattr(faq_tools, "search_faqs", fake_search_faqs)
+    context = AgentContext(llm = cast(Any, None), system_prompt = "", embeddings = cast(Any, FakeEmbeddings()), area = "Amigos",
+                           audiencia = "personal")
+
+    await cast(Any, faq_tools.search_faq).coroutine(query = "¿Dónde vives?", runtime = SimpleNamespace(context = context))
+
+    assert calls == [("Amigos", "personal")]
 
 # --- U-K3: exclusión del área de conocimiento en run_turn ---
 
@@ -143,7 +176,7 @@ def interno_graph(monkeypatch, sub_agents: list[SubAgentConfig]) -> tuple[Any, F
     async def fake_prompt(session, name):
         return "Eres el Agente Interno"
 
-    async def fake_sub_agents(session, audiencia):
+    async def fake_sub_agents(session, audiencias):
         return sub_agents
 
     monkeypatch.setattr(assistant.LLM, "create", fake_create)
@@ -156,7 +189,7 @@ def interno_graph(monkeypatch, sub_agents: list[SubAgentConfig]) -> tuple[Any, F
 async def test_u_k3_run_turn_excluye_las_areas_y_usa_el_turno_dado(monkeypatch):
     compiled, model = interno_graph(monkeypatch, [CONOCIMIENTO, OTRA])
 
-    turn = await assistant.run_turn(compiled, cast(Any, None), "Agente Interno", "interno", "spaces/AAA", "Hola",
+    turn = await assistant.run_turn(compiled, cast(Any, None), "Agente Interno", ("interno",), "spaces/AAA", "Hola",
                                     turn_id = "turno-1", exclude = {"Conocimiento"})
 
     assert turn[-1].text == "Hola Marco"
@@ -169,7 +202,7 @@ async def test_u_k3_run_turn_excluye_las_areas_y_usa_el_turno_dado(monkeypatch):
 async def test_u_k3_sin_excluir_el_conocimiento_queda_disponible(monkeypatch):
     compiled, model = interno_graph(monkeypatch, [CONOCIMIENTO, OTRA])
 
-    await assistant.run_turn(compiled, cast(Any, None), "Agente Interno", "interno", "spaces/AAA", "Hola")
+    await assistant.run_turn(compiled, cast(Any, None), "Agente Interno", ("interno",), "spaces/AAA", "Hola")
 
     assert "- Conocimiento:" in model.prompts[0]
 
@@ -178,7 +211,7 @@ async def test_u_k3_sin_excluir_el_conocimiento_queda_disponible(monkeypatch):
 async def test_u_k3_si_el_conocimiento_es_la_unica_area_igual_responde(monkeypatch):
     compiled, model = interno_graph(monkeypatch, [CONOCIMIENTO])
 
-    turn = await assistant.run_turn(compiled, cast(Any, None), "Agente Interno", "interno", "spaces/OTRO", "Hola",
+    turn = await assistant.run_turn(compiled, cast(Any, None), "Agente Interno", ("interno",), "spaces/OTRO", "Hola",
                                     exclude = {"Conocimiento"})
 
     assert turn[-1].text == "Hola Marco" and "Conocimiento" not in model.prompts[0]
@@ -189,7 +222,7 @@ async def test_u_k3_sin_areas_en_la_audiencia_sigue_sin_agente(monkeypatch):
     compiled, _ = interno_graph(monkeypatch, [])
 
     with pytest.raises(AgentNotFoundError):
-        await assistant.run_turn(compiled, cast(Any, None), "Agente Interno", "interno", "spaces/AAA", "Hola")
+        await assistant.run_turn(compiled, cast(Any, None), "Agente Interno", ("interno",), "spaces/AAA", "Hola")
 
 # --- U-K4 a U-K8: tools del sub-agente de conocimiento ---
 

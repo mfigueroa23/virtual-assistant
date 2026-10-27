@@ -153,7 +153,7 @@ def spy_ask(monkeypatch) -> list[str]:
     """Reemplaza ask en el router de chat para comprobar que el preflight no ejecuta el endpoint."""
     calls: list[str] = []
 
-    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje):
+    async def fake_ask(graph, session, coordinator, audiencias, thread_id, mensaje):
         calls.append(mensaje)
         return "ok"
 

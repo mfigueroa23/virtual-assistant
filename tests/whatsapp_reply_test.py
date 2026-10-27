@@ -25,6 +25,7 @@ CONTACTO = "+56911111111"
 NEGOCIO = "+56951959027"
 AHORA = datetime(2026, 10, 20, 12, 0, tzinfo = UTC)
 GRAPH = cast(Any, object())
+AUDIENCIAS = ("personal", "externo")
 
 
 def inbound(message_id: str = "in-1", type_: str = "text", **content: Any) -> dict[str, Any]:
@@ -114,7 +115,13 @@ class FakeCoordinatorModel:
         return AIMessage(reply.content, tool_calls = reply.tool_calls)
 
 
-def real_graph(monkeypatch, *replies: str | AIMessage, builder = coordinator_builder, model: FakeCoordinatorModel | None = None):
+EXPERIENCIA = SubAgentConfig("Agente Experiencia", "prompt", "Experiencia", "Perfil profesional", "externo")
+AMIGOS = SubAgentConfig("Agente Amigos", "prompt", "Amigos", "Lo que saben los amigos", "personal")
+
+
+def real_graph(monkeypatch, *replies: str | AIMessage, builder = coordinator_builder, model: FakeCoordinatorModel | None = None,
+               sub_agents: list[SubAgentConfig] | None = None, requested: list[tuple[str, ...]] | None = None):
+    """Grafo real con LLM falso; list_sub_agents devuelve `sub_agents` y registra en `requested` las audiencias pedidas."""
     model = model or FakeCoordinatorModel(*(replies or ("Claro, te cuento",)))
     llm = SimpleNamespace(llm = model, embeddings = None)
 
@@ -124,8 +131,10 @@ def real_graph(monkeypatch, *replies: str | AIMessage, builder = coordinator_bui
     async def fake_prompt(session, name):
         return "Responde como Marco"
 
-    async def fake_sub_agents(session, audiencia):
-        return [SubAgentConfig("Agente Experiencia", "prompt", "Experiencia", "Perfil profesional")]
+    async def fake_sub_agents(session, audiencias):
+        if requested is not None:
+            requested.append(tuple(audiencias))
+        return [EXPERIENCIA] if sub_agents is None else sub_agents
 
     monkeypatch.setattr(assistant.LLM, "create", fake_create)
     monkeypatch.setattr(assistant, "get_prompt", fake_prompt)
@@ -138,7 +147,7 @@ async def test_u_h1_ask_antepone_el_historial_previo_al_turno(monkeypatch):
     graph = real_graph(monkeypatch)
     previous = [HumanMessage("¿Estás disponible?"), AIMessage("Sí, escríbeme mañana")]
 
-    respuesta = await assistant.ask(graph, cast(Any, None), "Agente WhatsApp", "externo", "whatsapp:+569", "Hola de nuevo",
+    respuesta = await assistant.ask(graph, cast(Any, None), "Agente WhatsApp", AUDIENCIAS, "whatsapp:+569", "Hola de nuevo",
                                     previous = previous)
 
     assert respuesta == "Claro, te cuento"
@@ -154,8 +163,8 @@ def tool_call(name: str, call_id: str = "call-1", **args: str) -> AIMessage:
 
 def test_u_p1_build_prompt_suma_las_instrucciones_del_turno():
     base = CoordinatorContext(
-        llm = cast(Any, None), system_prompt = "Responde como Marco", embeddings = cast(Any, None), audiencia = "externo",
-        sub_agents = {"Experiencia": SubAgentConfig("Agente Experiencia", "prompt", "Experiencia", "Perfil profesional")})
+        llm = cast(Any, None), system_prompt = "Responde como Marco", embeddings = cast(Any, None),
+        sub_agents = {"Experiencia": EXPERIENCIA})
     instructions = "Encargos que puedes aceptar:\n- Enviar mi CV"
 
     assert coordinator.build_prompt(base) == "Responde como Marco\n\nÁreas disponibles:\n- Experiencia: Perfil profesional"
@@ -169,9 +178,9 @@ async def test_u_h3_run_turn_devuelve_solo_los_mensajes_del_turno(monkeypatch):
                                  "Déjame revisarlo y te escribo")
     graph = real_graph(monkeypatch, builder = whatsapp_coordinator_builder, model = model)
     thread = f"whatsapp:{CONTACTO}"
-    await assistant.run_turn(graph, cast(Any, None), "Agente WhatsApp", "externo", thread, "Hola")
+    await assistant.run_turn(graph, cast(Any, None), "Agente WhatsApp", AUDIENCIAS, thread, "Hola")
 
-    turn = await assistant.run_turn(graph, cast(Any, None), "Agente WhatsApp", "externo", thread, "¿Nos juntamos el jueves?",
+    turn = await assistant.run_turn(graph, cast(Any, None), "Agente WhatsApp", AUDIENCIAS, thread, "¿Nos juntamos el jueves?",
                                     instructions = "No aceptes encargos")
 
     assert [type(message).__name__ for message in turn] == ["AIMessage", "ToolMessage", "AIMessage"]
@@ -188,13 +197,44 @@ async def test_u_h4_run_turn_con_un_encargo_trae_la_guia_y_la_descripcion(monkey
     graph = real_graph(monkeypatch, tool_call("registrar_encargo", descripcion = "Enviar el CV a Sara"),
                        "Dale, lo hago y te aviso", builder = whatsapp_coordinator_builder)
 
-    turn = await assistant.run_turn(graph, cast(Any, None), "Agente WhatsApp", "externo", f"whatsapp:{CONTACTO}",
+    turn = await assistant.run_turn(graph, cast(Any, None), "Agente WhatsApp", AUDIENCIAS, f"whatsapp:{CONTACTO}",
                                     "¿Me mandas tu CV?")
 
     assert isinstance(turn[1], ToolMessage) and "Marco recibirá el encargo" in turn[1].text
     assert whatsapp_handoff.tasks_of(turn) == ["Enviar el CV a Sara"]
     assert whatsapp_handoff.derivations_of(turn) == []
     assert turn[-1].text == "Dale, lo hago y te aviso"
+
+# --- spec 011: audiencias del «Agente WhatsApp» ---
+
+@pytest.mark.anyio
+async def test_u_p2_run_turn_ofrece_las_areas_personal_y_externo_que_devuelve_list_sub_agents(monkeypatch):
+    model = FakeCoordinatorModel("Claro")
+    requested: list[tuple[str, ...]] = []
+    graph = real_graph(monkeypatch, model = model, sub_agents = [AMIGOS, EXPERIENCIA], requested = requested)
+
+    await assistant.run_turn(graph, cast(Any, None), "Agente WhatsApp", AUDIENCIAS, f"whatsapp:{CONTACTO}", "Hola")
+
+    assert requested == [AUDIENCIAS]
+    assert "- Amigos: Lo que saben los amigos" in model.prompts[0] and "- Experiencia: Perfil profesional" in model.prompts[0]
+
+
+@pytest.mark.anyio
+async def test_u_p7_sin_areas_personal_responde_con_las_externo(monkeypatch):
+    model = FakeCoordinatorModel("Claro")
+    graph = real_graph(monkeypatch, model = model, sub_agents = [EXPERIENCIA])
+
+    turn = await assistant.run_turn(graph, cast(Any, None), "Agente WhatsApp", AUDIENCIAS, f"whatsapp:{CONTACTO}", "Hola")
+
+    assert turn[-1].text == "Claro" and "- Experiencia:" in model.prompts[0]
+
+
+@pytest.mark.anyio
+async def test_u_p7_sin_ninguna_area_sigue_sin_agente(monkeypatch):
+    graph = real_graph(monkeypatch, sub_agents = [])
+
+    with pytest.raises(AgentNotFoundError):
+        await assistant.run_turn(graph, cast(Any, None), "Agente WhatsApp", AUDIENCIAS, f"whatsapp:{CONTACTO}", "Hola")
 
 # --- T06: configuración y reglas del acceso a datos ---
 
@@ -585,8 +625,8 @@ class FakeTurn:
         self.release: asyncio.Event | None = None
         self.error: Exception | None = None
 
-    async def __call__(self, graph, session, coordinator, audiencia, thread_id, mensaje, previous = (), instructions = ""):
-        self.calls.append({"coordinator": coordinator, "audiencia": audiencia, "thread_id": thread_id,
+    async def __call__(self, graph, session, coordinator, audiencias, thread_id, mensaje, previous = (), instructions = ""):
+        self.calls.append({"coordinator": coordinator, "audiencias": tuple(audiencias), "thread_id": thread_id,
                            "mensaje": mensaje, "previous": list(previous), "instructions": instructions})
         self.started.set()
         if self.release is not None:
@@ -697,9 +737,22 @@ async def test_u_w5_responde_con_el_agente_whatsapp_y_envia_el_texto_tal_cual(ch
     await drain()
 
     call = channel.turn.calls[0]
-    assert (call["coordinator"], call["audiencia"]) == ("Agente WhatsApp", "externo")
+    # U-P1 de la spec 011: las áreas personal junto con las externo, nunca las interno.
+    assert (call["coordinator"], call["audiencias"]) == ("Agente WhatsApp", AUDIENCIAS)
+    assert "interno" not in call["audiencias"]
     assert channel.ycloud.sent == [(NEGOCIO, CONTACTO, "Hola, sí estoy disponible")]
     assert channel.store.messages == {}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("family", [True, False])
+async def test_u_p6_familia_y_contactos_piden_las_mismas_audiencias(channel, family):
+    channel.handoff.family = {CONTACTO} if family else set()
+
+    await receive(text("in-1", "Hola"))
+    await drain()
+
+    assert channel.turn.calls[0]["audiencias"] == AUDIENCIAS
 
 
 @pytest.mark.anyio
@@ -839,7 +892,7 @@ async def test_u_w26_si_ycloud_rechaza_el_envio_no_se_reintenta(channel, caplog)
 @pytest.mark.anyio
 async def test_u_h2_forget_answer_quita_la_respuesta_del_historial(monkeypatch):
     graph = real_graph(monkeypatch, "Te confirmo el martes")
-    await assistant.ask(graph, cast(Any, None), "Agente WhatsApp", "externo", f"whatsapp:{CONTACTO}", "¿Cuándo nos vemos?")
+    await assistant.ask(graph, cast(Any, None), "Agente WhatsApp", AUDIENCIAS, f"whatsapp:{CONTACTO}", "¿Cuándo nos vemos?")
 
     await whatsapp_reply.forget_answer(graph, CONTACTO)
 

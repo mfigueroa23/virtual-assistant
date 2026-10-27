@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
@@ -16,6 +17,8 @@ class SubAgentConfig:
     prompt: str
     area: str
     description: str
+    # Audiencia del área: el sub-agente busca sus FAQs en ella (D2 del plan 011).
+    audiencia: str
 
 async def get_prompt(session: AsyncSession, name: str) -> str:
     try:
@@ -31,13 +34,13 @@ async def get_prompt(session: AsyncSession, name: str) -> str:
     except (SQLAlchemyError, OSError) as exc:
         raise DatabaseUnavailableError(str(exc)) from exc
 
-async def list_sub_agents(session: AsyncSession, audiencia: str) -> list[SubAgentConfig]:
+async def list_sub_agents(session: AsyncSession, audiencias: Sequence[str]) -> list[SubAgentConfig]:
     try:
-        logger.debug(f"Obteniendo sub-agentes de la audiencia '{audiencia}'")
+        logger.debug(f"Obteniendo sub-agentes de las audiencias {list(audiencias)}")
         result = await session.execute(
-            select(Agents.name, Agents.prompt, Area.name, Area.description)
+            select(Agents.name, Agents.prompt, Area.name, Area.description, Area.audiencia)
             .join(Area, Area.id == Agents.area_id)
-            .where(Area.audiencia == audiencia)
+            .where(Area.audiencia.in_(audiencias))
             .order_by(Area.name)
         )
         return [SubAgentConfig(*row) for row in result.all()]

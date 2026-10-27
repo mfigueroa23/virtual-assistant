@@ -51,14 +51,18 @@ def dm_event() -> AddonEvent:
 async def test_process_devuelve_la_respuesta_con_el_hilo_del_mensaje_original(monkeypatch):
     calls: list[str] = []
 
-    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje, **kwargs):
+    async def fake_ask(graph, session, coordinator, audiencias, thread_id, mensaje, **kwargs):
         calls.append(thread_id)
+        audiences.append(tuple(audiencias))
         return "ok"
 
+    audiences: list[tuple[str, ...]] = []
     monkeypatch.setattr(google_chat_reply, "ask", fake_ask)
 
     assert await process(GRAPH, space_event(), 1) == ChatAnswer("ok")
     assert calls == ["spaces/AAA/threads/T1"]
+    # U-P3 de la spec 011: el «Agente Interno» solo ve las áreas interno.
+    assert audiences == [("interno",)]
 
 
 @pytest.mark.anyio
@@ -491,7 +495,7 @@ async def test_answer_no_guarda_el_aviso_en_el_historial(monkeypatch, published,
     release = asyncio.Event()
     asked: list[tuple[str, str]] = []
 
-    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje, **kwargs):
+    async def fake_ask(graph, session, coordinator, audiencias, thread_id, mensaje, **kwargs):
         asked.append((thread_id, mensaje))
         await release.wait()
         return "ok"
@@ -516,7 +520,7 @@ def knowledge_turn(monkeypatch, allowed: bool, release: asyncio.Event | None = N
     """ask falso que registra turno y exclusión; turn_cards devuelve una tarjeta para ese mismo turno."""
     calls: list[dict[str, Any]] = []
 
-    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje, turn_id = None, exclude = ()):
+    async def fake_ask(graph, session, coordinator, audiencias, thread_id, mensaje, turn_id = None, exclude = ()):
         calls.append({"turn_id": turn_id, "exclude": tuple(exclude)})
         if release is not None:
             await release.wait()

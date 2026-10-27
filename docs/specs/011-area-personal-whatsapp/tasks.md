@@ -35,7 +35,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
 
 ## Fase 1 — Cimientos
 
-- [ ] **T02 — Esquema y migración de la audiencia personal y las propuestas de área**
+- [x] **T02 — Esquema y migración de la audiencia personal y las propuestas de área**
   - **RF:** RF-01, RF-28
   - **Depende de:** T01
   - **Alcance:** los cambios de **Data model** del plan en `src/models/areas.py` y `src/models/knowledge.py`, con la
@@ -53,7 +53,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
   - **Hecho cuando:** `uv run alembic upgrade head` y `uv run alembic check` pasan sin diferencias en la BD local, el
     script termina sin errores y `uv run pytest` sigue en verde.
 
-- [ ] **T03 — Audiencias de los coordinadores y de los sub-agentes**
+- [x] **T03 — Audiencias de los coordinadores y de los sub-agentes**
   - **RF:** RF-02, RF-03, RF-04, RF-05, RF-06, RF-07
   - **Depende de:** T01 (puede ir en paralelo con T02: usa `areas.audiencia`, que ya existe)
   - **Alcance:**

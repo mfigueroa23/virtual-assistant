@@ -11,13 +11,13 @@ from src.services.assistant import ask
 route = APIRouter(tags=['Chat'])
 logger = logging.getLogger(__name__)
 
-AUDIENCIA = "externo"
+AUDIENCIAS = ("externo",)
 COORDINADOR = "Agente Externo"
 
 @route.post("/chat", responses={ 500: { "model": ChatResponse }, 503: { "model": ChatResponse } })
 async def chat(request: Request, response: Response, message: ChatRequest, session: SessionDep) -> ChatResponse:
   try:
-    respuesta = await ask(request.app.state.graph, session, COORDINADOR, AUDIENCIA, str(message.chat_id), message.mensaje)
+    respuesta = await ask(request.app.state.graph, session, COORDINADOR, AUDIENCIAS, str(message.chat_id), message.mensaje)
     return ChatResponse(respuesta = respuesta)
   except (PropertyNotFoundError, AgentNotFoundError) as exc:
     logger.error("Agente mal configurado: %s", exc)

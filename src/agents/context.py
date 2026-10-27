@@ -8,6 +8,7 @@ class AgentContext:
   system_prompt: str
   embeddings: GoogleGenerativeAIEmbeddings
   area: str
+  # Audiencia del área, no la del coordinador (D2 del plan 011).
   audiencia: str
   # Turno del coordinador: las propuestas de conocimiento se guardan con él para armar sus tarjetas (D2 del plan 009).
   turn_id: str = ""
@@ -17,7 +18,7 @@ class CoordinatorContext:
   llm: ChatGoogleGenerativeAI
   system_prompt: str
   embeddings: GoogleGenerativeAIEmbeddings
-  audiencia: str
+  # Cada sub-agente trae la audiencia de su área (D2 del plan 011).
   sub_agents: dict[str, SubAgentConfig]
   # Instrucciones del turno que se suman al final del prompt del coordinador.
   instructions: str = ""
