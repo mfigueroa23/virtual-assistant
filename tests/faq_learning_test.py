@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
@@ -18,7 +19,7 @@ NOTICE = NoticeTarget(CONTACTO, "+56951959027", "Sara Pérez", datetime.now(UTC)
 
 
 def draft(**changes: Any) -> FaqDraft:
-    values: dict[str, Any] = dict(reusable = True, already_answered = False, area = "Experiencia", category = "Stack",
+    values: dict[str, Any] = dict(reusable = True, already_answered = False, area = "Personal", category = "Trabajo",
                                   question = "¿Trabajaste con Kafka?", answer = "Sí, dos años en Autofin.")
     return FaqDraft(**(values | changes))
 
@@ -73,9 +74,14 @@ class Learning:
     def __init__(self, monkeypatch):
         self.model = FakeModel()
         self.embeddings = FakeEmbeddings()
-        self.areas = [AreaSummary("Experiencia", "Perfil profesional", [CategorySummary("Stack", 8)], "externo"),
+        self.areas = [AreaSummary("Personal", "Lo que Marco comparte por WhatsApp", [CategorySummary("Trabajo", 2)], "personal"),
+                      AreaSummary("Experiencia", "Perfil profesional", [CategorySummary("Stack", 8)], "externo"),
                       AreaSummary("Blog", "Artículos", [], "externo")]
         self.similar = [KnowledgeHit(7, "Experiencia", "Stack", "¿Usas mensajería?", "Uso RabbitMQ.", 0.2, "externo")]
+        # Audiencias pedidas a list_knowledge, search_knowledge y create_proposal.
+        self.listed: list[tuple[str, ...]] = []
+        self.searched: list[tuple[str, ...]] = []
+        self.saved_in: list[tuple[str, ...]] = []
         self.created: list[dict[str, Any]] = []
         self.published: list[dict[str, Any]] = []
         self.publish_error: Exception | None = None
@@ -87,17 +93,20 @@ class Learning:
     async def create(self, session):
         return SimpleNamespace(llm = self.model, embeddings = self.embeddings)
 
-    async def list_knowledge(self, session):
-        return self.areas
+    async def list_knowledge(self, session, audiencias = ("externo", "interno", "personal")):
+        self.listed.append(tuple(audiencias))
+        return [area for area in self.areas if area.audiencia in audiencias]
 
-    async def search_knowledge(self, session, vector):
-        return self.similar
+    async def search_knowledge(self, session, vector, audiencias = ("externo", "interno", "personal")):
+        self.searched.append(tuple(audiencias))
+        return [hit for hit in self.similar if hit.audiencia in audiencias]
 
     async def create_proposal(self, session, origin, action, area = "", category = "", question = "", answer = "",
-                              faq_id = None, turn_id = None):
+                              faq_id = None, turn_id = None, audiencias = ("externo", "interno", "personal")):
+        self.saved_in.append(tuple(audiencias))
         self.created.append(dict(origin = origin, action = action, area = area, category = category, question = question,
                                  answer = answer))
-        return Proposal("p-9", origin, action, area, category, None, question, answer, None, None, "pending")
+        return Proposal("p-9", origin, action, area, category, None, question, answer, None, None, "pending", "personal")
 
     async def get_property(self, session, key):
         return {"google_chat_audience": URL}[key]
@@ -128,7 +137,7 @@ async def test_u_l1_el_borrador_se_guarda_y_se_publica_en_el_hilo_del_aviso(lear
     await propose_faq(NOTICE, HILO, RESPUESTA)
 
     assert learning.model.schemas == [FaqDraft]
-    assert learning.created == [dict(origin = "consulta", action = "create", area = "Experiencia", category = "Stack",
+    assert learning.created == [dict(origin = "consulta", action = "create", area = "Personal", category = "Trabajo",
                                      question = "¿Trabajaste con Kafka?", answer = "Sí, dos años en Autofin.")]
     [message] = learning.published
     assert message["space"] == "spaces/DM1" and message["thread"] == HILO and message["text"]
@@ -145,7 +154,7 @@ async def test_u_l1_el_pedido_trae_las_preguntas_la_respuesta_y_las_areas(learni
     assert faq_learning.PROPONER_DATOS in texto
     assert "<preguntas>\n- ¿Trabajaste con Kafka?\n</preguntas>" in texto
     assert f"<respuesta_de_marco>\n{RESPUESTA}\n</respuesta_de_marco>" in texto
-    assert "- Experiencia: Perfil profesional" in texto and "Stack" in texto and "- Blog: Artículos" in texto
+    assert "<areas>\n- Personal: Lo que Marco comparte por WhatsApp\n  categorías: Trabajo\n</areas>" in texto
 
 
 @pytest.mark.anyio
@@ -198,7 +207,7 @@ async def test_u_l4_si_ya_hay_una_faq_que_responde_no_se_propone(learning):
     await propose_faq(NOTICE, HILO, RESPUESTA)
 
     assert learning.embeddings.queries == ["¿Trabajaste con Kafka?"]
-    assert "<faqs_parecidas>\n[Experiencia › Stack] ¿Usas mensajería?\nUso RabbitMQ.\n</faqs_parecidas>" in request_of(learning)
+    assert "<faqs_parecidas>\n[externo · Experiencia › Stack] ¿Usas mensajería?\nUso RabbitMQ.\n</faqs_parecidas>" in request_of(learning)
     assert learning.created == [] and learning.published == []
 
 
@@ -229,6 +238,62 @@ async def test_u_l6_los_fallos_no_publican_ni_dejan_el_texto_en_el_log(learning,
     assert learning.published == []
     assert caplog.records
     assert all("Kafka" not in record.getMessage() for record in caplog.records)
+
+
+# --- spec 011, U-F1 a U-F5: propuestas solo en áreas personal ---
+
+@pytest.mark.anyio
+async def test_u_f1_el_pedido_lista_solo_las_areas_personal_y_se_guarda_en_personal(learning):
+    await propose_faq(NOTICE, HILO, RESPUESTA)
+
+    areas = request_of(learning).split("<areas>\n")[1].split("\n</areas>")[0]
+    assert learning.listed == [("personal",)]
+    assert "Personal" in areas and "Experiencia" not in areas and "Blog" not in areas
+    assert learning.saved_in == [("personal",)] and learning.created[0]["area"] == "Personal"
+    assert "personal · Personal › Trabajo" in json.dumps(learning.published[0]["cards"], ensure_ascii = False)
+
+
+def test_u_f1_proponer_pide_un_area_personal_de_la_lista():
+    assert "una de las áreas personal de la lista" in faq_learning.PROPONER
+
+
+@pytest.mark.anyio
+async def test_u_f2_busca_parecidas_en_personal_y_externo_con_su_audiencia(learning):
+    learning.similar.append(KnowledgeHit(8, "Soporte", "Accesos", "¿Clave de la VPN?", "Pídela a TI.", 0.3, "interno"))
+    learning.model.draft = draft(already_answered = True)
+
+    await propose_faq(NOTICE, HILO, RESPUESTA)
+
+    texto = request_of(learning)
+    assert learning.searched == [("personal", "externo")]
+    assert "[externo · Experiencia › Stack] ¿Usas mensajería?" in texto and "VPN" not in texto
+    assert learning.created == []
+
+
+@pytest.mark.anyio
+async def test_u_f3_sin_areas_personal_no_llama_al_llm_ni_publica(learning, caplog):
+    learning.areas = [area for area in learning.areas if area.audiencia != "personal"]
+
+    with caplog.at_level(logging.INFO, logger = "src.services.faq_learning"):
+        await propose_faq(NOTICE, HILO, RESPUESTA)
+
+    assert learning.model.calls == [] and learning.embeddings.queries == []
+    assert learning.created == [] and learning.published == []
+    assert caplog.records and all("Kafka" not in record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("area", ["Experiencia", "Inventada"])
+async def test_u_f4_un_borrador_fuera_de_las_areas_personal_no_se_guarda(learning, caplog, area):
+    learning.model.draft = draft(area = area)
+
+    with caplog.at_level(logging.INFO, logger = "src.services.faq_learning"):
+        await propose_faq(NOTICE, HILO, RESPUESTA)
+
+    assert learning.created == [] and learning.published == []
+    # U-F5: el log no trae la pregunta ni la respuesta.
+    assert caplog.records
+    assert all("Kafka" not in record.getMessage() and "dos años" not in record.getMessage() for record in caplog.records)
 
 
 @pytest.mark.anyio

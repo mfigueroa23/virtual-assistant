@@ -18,6 +18,10 @@ from src.services.whatsapp_handoff import bullets, digits
 
 logger = logging.getLogger(__name__)
 
+# Lo aprendido por WhatsApp va solo a áreas personal: no llega al chat web (RF-23, D8 del plan 011).
+AUDIENCIAS_PROPUESTA = ("personal",)
+# Si el portafolio ya lo responde, WhatsApp también lo ve: se buscan parecidas en las dos (RF-24, D9 del plan 011).
+AUDIENCIAS_PARECIDAS = ("personal", "externo")
 # Límite propio: la propuesta corre aparte y no debe quedar colgada (D11 del plan 009).
 PROPUESTA_LIMITE = 30.0
 # Instrucción fija en código: el contacto ni Marco pueden cambiar el criterio desde el mensaje (D12).
@@ -26,8 +30,9 @@ PROPONER = (
   "sirve como pregunta frecuente para contestar a otras personas que pregunten lo mismo.\n"
   "- reusable: false si la respuesta es personal, puntual, depende de una fecha o solo vale para ese contacto, como "
   "una cita, un precio acordado o un saludo.\n"
-  "- already_answered: true si alguna de las preguntas frecuentes parecidas ya responde la pregunta.\n"
-  "- Si sirve: area es exactamente una de las áreas de la lista; category es una categoría existente de esa área o "
+  "- already_answered: true si alguna de las preguntas frecuentes parecidas, de cualquier audiencia, ya responde la "
+  "pregunta.\n"
+  "- Si sirve: area es exactamente una de las áreas personal de la lista; category es una categoría existente de esa área o "
   "una nueva corta; question es la pregunta en general, completa y autocontenida; answer es la respuesta con solo la "
   "información que dio Marco, sin agregar datos, en el estilo de las preguntas frecuentes parecidas.\n"
   "- Nunca incluyas nombres, números ni otros datos personales del contacto."
@@ -41,7 +46,7 @@ class FaqDraft(BaseModel):
   """Borrador de la pregunta frecuente que propone el LLM."""
   reusable: bool = Field(description = "Si la respuesta sirve para otras personas que pregunten lo mismo.")
   already_answered: bool = Field(description = "Si una de las preguntas frecuentes parecidas ya la responde.")
-  area: str = Field("", description = "Nombre exacto de un área de la lista.")
+  area: str = Field("", description = "Nombre exacto de un área personal de la lista.")
   category: str = Field("", description = "Categoría existente del área o una nueva corta.")
   question: str = Field("", description = "Pregunta general, completa y autocontenida, en español.")
   answer: str = Field("", description = "Respuesta con solo la información que dio Marco.")
@@ -58,7 +63,7 @@ def knowledge_text(areas: Sequence[AreaSummary]) -> str:
   return "\n".join(lines)
 
 def similar_text(hits: Sequence[KnowledgeHit]) -> str:
-  return "\n\n".join(f"[{hit.area} › {hit.category}] {hit.question}\n{hit.answer}" for hit in hits)
+  return "\n\n".join(f"[{hit.audiencia} · {hit.area} › {hit.category}] {hit.question}\n{hit.answer}" for hit in hits)
 
 def proposal_request(areas: Sequence[AreaSummary], similar: Sequence[KnowledgeHit], questions: Sequence[str], reply: str) -> str:
   # Sin el nombre ni el número del contacto: el LLM no los recibe (RF-22).
@@ -81,13 +86,17 @@ def mentions_contact(draft: FaqDraft, notice: NoticeTarget) -> bool:
 async def similar_faqs(session: AsyncSession, embeddings: Any, questions: Sequence[str]) -> list[KnowledgeHit]:
   found: dict[int, KnowledgeHit] = {}
   for question in questions:
-    for hit in await search_knowledge(session, await embeddings.aembed_query(question)):
+    for hit in await search_knowledge(session, await embeddings.aembed_query(question), AUDIENCIAS_PARECIDAS):
       found.setdefault(hit.id, hit)
   return list(found.values())
 
 async def draft_proposal(session: AsyncSession, notice: NoticeTarget, reply: str) -> Proposal | None:
+  # El LLM solo ve áreas personal, así que no puede elegir otra (D8 del plan 011).
+  areas = await list_knowledge(session, AUDIENCIAS_PROPUESTA)
+  if not areas:
+    logger.info("No hay áreas personal: no se propone una pregunta frecuente desde la consulta")
+    return None
   llm = await LLM.create(session)
-  areas = await list_knowledge(session)
   similar = await similar_faqs(session, llm.embeddings, notice.questions)
   result = await llm.llm.with_structured_output(FaqDraft).ainvoke([
     SystemMessage(PROPONER), HumanMessage(proposal_request(areas, similar, notice.questions, reply))
@@ -96,13 +105,18 @@ async def draft_proposal(session: AsyncSession, notice: NoticeTarget, reply: str
   # Lo que no es reutilizable o ya está respondido no se propone (RF-23, RF-24).
   if not draft.reusable or draft.already_answered:
     return None
+  # Guarda en código: un área externo o inventada no se propone (RF-27 de la spec 011).
   if draft.area not in { area.name for area in areas }:
-    logger.warning("El LLM propuso una pregunta frecuente en un área que no existe: no se propone")
+    logger.warning("El LLM propuso una pregunta frecuente fuera de las áreas personal: no se propone")
     return None
   if mentions_contact(draft, notice):
     logger.warning("La pregunta frecuente propuesta trae datos del contacto: no se propone")
     return None
-  proposal = await create_proposal(session, "consulta", "create", draft.area, draft.category, draft.question, draft.answer)
+  # Segunda guarda: create_proposal tampoco acepta un área que no sea personal.
+  proposal = await create_proposal(
+    session, "consulta", "create", draft.area, draft.category, draft.question, draft.answer,
+    audiencias = AUDIENCIAS_PROPUESTA
+  )
   return proposal if isinstance(proposal, Proposal) else None
 
 async def publish_proposal(session: AsyncSession, thread: str, proposal: Proposal) -> None:

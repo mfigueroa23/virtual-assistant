@@ -99,7 +99,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
 
 ## Fase 3 — Integración
 
-- [ ] **T06 — Tarjetas y clics con audiencia y de creación de área**
+- [x] **T06 — Tarjetas y clics con audiencia y de creación de área**
   - **RF:** RF-11, RF-13, RF-14, RF-15, RF-18, RF-20, RF-22, RF-25, RF-28, RF-29
   - **Depende de:** T05
   - **Alcance:** en `src/services/knowledge_card.py`:
@@ -110,7 +110,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
     El log de un fallo no lleva el nombre ni la descripción del área.
   - **Hecho cuando:** U-T1 a U-T10 pasan y `uv run pytest` y `uv run pyright` quedan en verde.
 
-- [ ] **T07 — Propuestas desde consultas solo en áreas personal**
+- [x] **T07 — Propuestas desde consultas solo en áreas personal**
   - **RF:** RF-23, RF-24, RF-26, RF-27, RF-29
   - **Depende de:** T04 (puede ir en paralelo con T05 y T06)
   - **Alcance:** en `src/services/faq_learning.py`, `draft_proposal` (D8, D9):
