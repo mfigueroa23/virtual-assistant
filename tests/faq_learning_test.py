@@ -73,9 +73,9 @@ class Learning:
     def __init__(self, monkeypatch):
         self.model = FakeModel()
         self.embeddings = FakeEmbeddings()
-        self.areas = [AreaSummary("Experiencia", "Perfil profesional", [CategorySummary("Stack", 8)]),
-                      AreaSummary("Blog", "Artículos", [])]
-        self.similar = [KnowledgeHit(7, "Experiencia", "Stack", "¿Usas mensajería?", "Uso RabbitMQ.", 0.2)]
+        self.areas = [AreaSummary("Experiencia", "Perfil profesional", [CategorySummary("Stack", 8)], "externo"),
+                      AreaSummary("Blog", "Artículos", [], "externo")]
+        self.similar = [KnowledgeHit(7, "Experiencia", "Stack", "¿Usas mensajería?", "Uso RabbitMQ.", 0.2, "externo")]
         self.created: list[dict[str, Any]] = []
         self.published: list[dict[str, Any]] = []
         self.publish_error: Exception | None = None

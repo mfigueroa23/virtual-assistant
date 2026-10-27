@@ -69,7 +69,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
 
 ## Fase 2 — Conocimiento en tres audiencias
 
-- [ ] **T04 — Servicio y tools del conocimiento en las tres audiencias**
+- [x] **T04 — Servicio y tools del conocimiento en las tres audiencias**
   - **RF:** RF-08, RF-09, RF-10, RF-12, RF-28
   - **Depende de:** T02
   - **Alcance:** en `src/services/knowledge.py` (D4):
@@ -83,7 +83,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
   - **Hecho cuando:** U-C1 a U-C4 pasan, el script SQL termina sin errores y `uv run pytest` y `uv run pyright` quedan
     en verde.
 
-- [ ] **T05 — Crear áreas con su sub-agente**
+- [x] **T05 — Crear áreas con su sub-agente**
   - **RF:** RF-14, RF-15, RF-16, RF-17, RF-19, RF-20, RF-21
   - **Depende de:** T03, T04
   - **Alcance:**
