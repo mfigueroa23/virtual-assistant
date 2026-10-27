@@ -147,61 +147,15 @@ El número está conectado a YCloud en modo coexistencia: la app de WhatsApp Bus
 
 Para activar el canal:
 
-1. Cargar el coordinador con su prompt en primera persona. Debe evitar comprometer a Marco con fechas, precios o reuniones; los criterios de derivación y de encargos van en el paso 5:
-
-   ```sql
-   INSERT INTO agents (name, prompt) VALUES ('Agente WhatsApp', 'Eres Marco Figueroa respondiendo tu WhatsApp...');
-   ```
-
+1. Cargar en `agents` el coordinador `Agente WhatsApp`, sin área, con su prompt en primera persona. Debe evitar comprometer a Marco con fechas, precios o reuniones; los criterios de derivación y de encargos van en el paso 5.
 2. Cargar `ycloud_api_key` y, si se quieren otros valores, `whatsapp_pause_hours`, `whatsapp_grouping_seconds` y `whatsapp_timeout`.
 3. En YCloud, **Developers → Webhooks**: crear un endpoint con la URL pública `https://<host>/api/v1/whatsapp/events` y los eventos `whatsapp.inbound_message.received`, `whatsapp.smb.message.echoes` y `whatsapp.message.updated`. Guardar el secreto que muestra YCloud (solo una vez) en `ycloud_webhook_secret`.
-4. Revisar en el log que los eventos llegan con `200` y luego activar el canal:
+4. Revisar en el log que los eventos llegan con `200` y luego activar el canal con la property `whatsapp_enabled = true`.
+5. Para la derivación, los encargos, las consultas y las respuestas desde el hilo, abrir en Google Chat el mensaje directo con la app y copiar el id de la URL (`https://chat.google.com/…/dm/<id>`). Cargar las properties `whatsapp_notify_space` (`spaces/<id>`), `whatsapp_accepted_tasks` y `whatsapp_family_phones` (una entrada por línea) y `whatsapp_family_instructions`.
 
-   ```sql
-   INSERT INTO property (key, value) VALUES ('whatsapp_enabled', 'true')
-   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-   ```
+   Sumar al prompt del coordinador los criterios de trato, derivación (`derivar_a_marco`), consultas (`consultar_a_marco`) y encargos (`registrar_encargo`), pidiéndole que responda con sus propias palabras, sin prometer plazos ni repetir fórmulas. Si el prompt dice que no aceptes encargos, quitar esa regla: ahora la deciden `whatsapp_accepted_tasks` y la familia.
 
-5. Para la derivación, los encargos, las consultas y las respuestas desde el hilo, abrir en Google Chat el mensaje directo con la app y copiar el id de la URL (`https://chat.google.com/…/dm/<id>`). Cargar el space de aviso, los encargos aceptables y la familia:
-
-   ```sql
-   INSERT INTO property (key, value) VALUES
-     ('whatsapp_notify_space', 'spaces/<id>'),
-     ('whatsapp_accepted_tasks', E'Enviar mi CV o mi portafolio\nEnviar el enlace de un proyecto o de un artículo del blog'),
-     ('whatsapp_family_phones', E'+56 9 1234 5678\n+56987654321'),
-     ('whatsapp_family_instructions', 'Es tu familia: háblales con cariño, de tú y sin formalidades.')
-   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
-   ```
-
-   Sumar los criterios al prompt del coordinador. Si el prompt dice que no aceptes encargos, quitar esa regla: ahora la deciden `whatsapp_accepted_tasks` y la familia.
-
-   ```sql
-   UPDATE agents SET prompt = prompt || E'\n\n'
-     'Trato: con quien no sea de tu familia, responde de forma cordial y profesional.\n\n'
-     'Derivar: usa derivar_a_marco cuando el contacto quiera agendar una reunión o una llamada, pregunte por precios o '
-     'condiciones, tenga una urgencia, quiera hablar contigo en persona o pida un encargo que no puedes aceptar.\n\n'
-     'Consultar: si te pregunta algo que no está en tu información, usa consultar_a_marco con la pregunta y sigue '
-     'atendiendo el resto de la conversación.\n\n'
-     'Encargos: si te pide hacer algo que puedes aceptar según tus instrucciones, usa registrar_encargo con lo que hay '
-     'que hacer.\n\n'
-     'En todos los casos responde con tus propias palabras, según lo que pidió y el tono de la conversación, sin '
-     'prometer plazos ni repetir fórmulas.'
-   WHERE name = 'Agente WhatsApp' AND area_id IS NULL;
-   ```
-
-6. Al pasar de la 3.6.0 a la 3.7.0, el prompt que ya está en la base trae frases de ejemplo que el modelo copia y deriva lo que no sabe. Este `UPDATE` cambia esas tres reglas; cada patrón debe coincidir una sola vez, así que conviene revisar el resultado con un `SELECT` antes:
-
-   ```sql
-   UPDATE agents SET prompt = regexp_replace(regexp_replace(regexp_replace(prompt,
-     'Responde con calidez y brevedad, por ejemplo:[^\n]*',
-     'Responde con calidez y brevedad, con tus propias palabras y sin repetir fórmulas.'),
-     ' y di que lo revisas y respondes pronto, sin prometer plazos\.',
-     ' y responde con tus propias palabras, sin prometer plazos.'),
-     'Si no tienes información para una consulta profesional[^\n]*',
-     'Si no tienes información para una consulta profesional, usa consultar_a_marco con la pregunta y sigue atendiendo '
-     'el resto de la conversación. Si insiste en hablar contigo, usa derivar_a_marco.')
-   WHERE name = 'Agente WhatsApp' AND area_id IS NULL;
-   ```
+6. El prompt no debe traer frases de ejemplo para copiar: el modelo las repite. Lo que no sabe lo consulta a Marco con `consultar_a_marco` y solo deriva si el contacto insiste en hablar con él.
 
 Para apagarlo, `whatsapp_enabled = false`: aplica desde el siguiente evento.
 
@@ -217,7 +171,7 @@ Lo que Marco escribe en Google Chat fuera de los hilos de avisos lo atiende el �
 
   No borra ni renombra áreas, no cambia la audiencia de un área, no cambia prompts y no renombra ni borra categorías.
 - **Crear áreas:** al confirmar, se crea el área y su sub-agente «Agente \<nombre del área\>», que los coordinadores de su audiencia usan desde el siguiente mensaje, sin reiniciar.
-  - El sub-agente nace con un prompt base fijo, con el nombre y la descripción del área: busca siempre con `search_faq`, responde solo con lo que encuentra y no inventa. Según la audiencia, suma una regla: en `externo` habla de Marco en tercera persona sin datos personales, en `personal` no comparte datos de contacto, direcciones ni información de terceros, y en `interno` puede dar el detalle interno. Para ajustarlo, un `UPDATE agents SET prompt = … WHERE name = 'Agente <nombre>'`.
+  - El sub-agente nace con un prompt base fijo, con el nombre y la descripción del área: busca siempre con `search_faq`, responde solo con lo que encuentra y no inventa. Según la audiencia, suma una regla: en `externo` habla de Marco en tercera persona sin datos personales, en `personal` no comparte datos de contacto, direcciones ni información de terceros, y en `interno` puede dar el detalle interno. Para ajustarlo, se edita el prompt de «Agente \<nombre\>» en la tabla `agents`.
   - El nombre del área es único entre las tres audiencias. Si ya existe, no hay tarjeta y la respuesta dice en qué audiencia está. Si al confirmar ya existe un área o un agente con ese nombre (por ejemplo, un área «Externo» chocaría con el «Agente Externo»), no se crea nada y la tarjeta lo dice.
 - **Solo desde el space de aviso:** el conocimiento se ve y se cambia únicamente en `whatsapp_notify_space`, el mensaje directo de Marco con la app.
   - En otros spaces, el «Agente Interno» responde sin el área «Conocimiento».
@@ -238,46 +192,7 @@ Lo que Marco escribe en Google Chat fuera de los hilos de avisos lo atiende el �
   - Los avisos publicados antes de la 3.8.0 no generan propuestas.
 - **Fallos:** si la propuesta o un cambio fallan, el log guarda solo el tipo de error, nunca la pregunta, la respuesta ni el nombre o la descripción de un área. El mensaje al contacto y la confirmación en el hilo no cambian.
 
-Para activarlo, cargar el «Agente Interno», el área «Conocimiento» y su sub-agente. Usa `whatsapp_notify_space` (paso 5 de WhatsApp) y `google_chat_audience`, que ya existen.
-
-```sql
-INSERT INTO agents (name, prompt) VALUES ('Agente Interno', '<prompt del Agente Interno>');
-
-INSERT INTO areas (name, description, audiencia) VALUES ('Conocimiento', '<descripción del área Conocimiento>', 'interno');
-
-INSERT INTO agents (name, prompt, area_id) SELECT 'Agente Conocimiento', '<prompt del Agente Conocimiento>', id
-FROM areas WHERE name = 'Conocimiento';
-```
-
-Los textos son los de los `UPDATE` de abajo. Al pasar de la 3.8.1 a la 3.9.0, esos `UPDATE` cambian los que ya están en la base para las tres audiencias y la creación de áreas; conviene revisarlos antes de aplicarlos en producción:
-
-```sql
-UPDATE agents SET prompt =
-  'Eres el asistente interno de Marco Figueroa en Google Chat. Responde en español, breve y directo. Usa delegar_area '
-  'con el área que corresponda. Para ver o cambiar el conocimiento del asistente (las preguntas frecuentes del chat '
-  'web, del WhatsApp y de Google Chat) o para crear áreas, delega en el área Conocimiento. Los cambios se confirman '
-  'con la tarjeta que acompaña tu respuesta: nunca digas que un cambio está hecho. Si el área Conocimiento no está '
-  'entre tus áreas, explica que el conocimiento solo se administra desde el mensaje directo de avisos.'
-WHERE name = 'Agente Interno' AND area_id IS NULL;
-
-UPDATE areas SET description =
-  'Ver, buscar, crear, editar y borrar las preguntas frecuentes de las audiencias externo (chat web y WhatsApp), '
-  'interno (Google Chat) y personal (solo WhatsApp), y crear áreas nuevas con su sub-agente'
-WHERE name = 'Conocimiento' AND audiencia = 'interno';
-
-UPDATE agents SET prompt =
-  'Administras el conocimiento del asistente de Marco en tres audiencias: externo (chat web del portafolio y '
-  'WhatsApp), interno (solo Marco en Google Chat) y personal (cualquier contacto de WhatsApp, nunca el chat web). '
-  'Usa ver_conocimiento para listar áreas y categorías por audiencia y buscar_conocimiento para encontrar preguntas '
-  'con su id. Para cada cambio en preguntas o categorías que pida Marco usa proponer_cambio; antes de editar o '
-  'borrar, busca la pregunta y usa su id. Si Marco pide crear un área, usa proponer_area con el nombre, la audiencia '
-  'y una descripción de una frase; si no queda clara la audiencia, pregúntale. Recuerda que lo que va a personal lo '
-  've cualquiera que le escriba por WhatsApp. Redacta preguntas autocontenidas y respuestas sin datos personales de '
-  'contactos. Nada se guarda hasta que Marco confirme en la tarjeta: di qué propusiste, sin decir que está hecho. Si '
-  'pide borrar o renombrar áreas, cambiar la audiencia de un área, cambiar prompts o borrar categorías, dile que no '
-  'puedes.'
-WHERE name = 'Agente Conocimiento';
-```
+Para activarlo, cargar en la base el coordinador «Agente Interno», el área `interno` «Conocimiento» y su sub-agente «Agente Conocimiento». Usa `whatsapp_notify_space` (paso 5 de WhatsApp) y `google_chat_audience`, que ya existen. Desde la 3.9.0, el prompt de «Agente Conocimiento» debe mencionar las tres audiencias y `proponer_area`, y el del «Agente Interno», delegar en «Conocimiento» también para crear áreas.
 
 Después del despliegue, las áreas `personal` iniciales se crean pidiéndoselas a «Conocimiento» en el space de aviso. Hasta que exista alguna, WhatsApp responde solo con las áreas `externo` y las consultas no generan propuestas.
 
@@ -303,15 +218,7 @@ Si «Conocimiento» es la única área `interno`, fuera del space de aviso el «
 
 La API solo emite cabeceras CORS a los orígenes registrados y habilitados en `cors_origins`. La tabla se consulta en cada petición que trae la cabecera `Origin` (sin caché), así que un cambio aplica desde la siguiente petición sin reiniciar la aplicación. Las peticiones sin `Origin` (Google Chat, probes de Kubernetes) no la consultan.
 
-El origen se compara de forma exacta con el que envía el navegador: `esquema://host[:puerto]`, en minúsculas, sin barra final ni ruta y sin el puerto por defecto (`https://app.ejemplo.com`, `http://localhost:5173`). No se admiten comodines ni subdominios: cada origen va en su propia fila.
-
-```sql
--- Habilitar un origen
-INSERT INTO cors_origins (origin) VALUES ('https://app.ejemplo.com');
-
--- Deshabilitarlo sin borrarlo
-UPDATE cors_origins SET enabled = false WHERE origin = 'https://app.ejemplo.com';
-```
+El origen se compara de forma exacta con el que envía el navegador: `esquema://host[:puerto]`, en minúsculas, sin barra final ni ruta y sin el puerto por defecto (`https://app.ejemplo.com`, `http://localhost:5173`). No se admiten comodines ni subdominios: cada origen va en su propia fila, y para deshabilitar un origen sin borrarlo se pone `enabled = false`.
 
 Un origen no permitido recibe la respuesta sin cabeceras CORS (el navegador la bloquea) y su preflight se responde con `400`. Si la base de datos falla al consultar, el origen se trata como no permitido. No se envían credenciales (`Access-Control-Allow-Credentials`).
 
@@ -335,13 +242,7 @@ uv run alembic downgrade -1
 
 Revisa siempre el archivo generado en `alembic/versions/` antes de aplicarlo.
 
-El `downgrade` de la migración `personal audience` (3.9.0) borra las propuestas `area` y falla si hay áreas `personal`. Antes de bajar a la 3.8.1, bórralas o cámbiales la audiencia:
-
-```sql
--- Revisar qué áreas personal hay y moverlas a externo (o borrarlas junto con su agente)
-SELECT id, name FROM areas WHERE audiencia = 'personal';
-UPDATE areas SET audiencia = 'externo' WHERE audiencia = 'personal';
-```
+El `downgrade` de la migración `personal audience` (3.9.0) borra las propuestas `area` y falla si hay áreas `personal`. Antes de bajar a la 3.8.1, bórralas junto con su agente o cámbiales la audiencia.
 
 ## Tests
 
