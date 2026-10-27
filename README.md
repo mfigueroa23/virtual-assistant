@@ -4,10 +4,18 @@ Backend de asistente virtual, construido con FastAPI, SQLAlchemy (async), LangGr
 
 ## Arquitectura
 
-- Hay tres coordinadores: `Agente Externo` atiende a los clientes por `/chat`, `Agente Interno` a los colaboradores por Google Chat y `Agente WhatsApp` a los contactos del WhatsApp de Marco (vía YCloud), en primera persona y con las áreas de la audiencia `externo`.
-- Cada coordinador delega la consulta en el sub-agente del área que corresponde (un sub-agente por área, según la audiencia `externo` o `interno`).
-- El área `interno` «Conocimiento» tiene un sub-agente propio que administra las preguntas frecuentes de las áreas `externo` desde Google Chat (ver [Agente Interno y conocimiento](#agente-interno-y-conocimiento)).
-- Cada sub-agente busca en las preguntas frecuentes de su área con similitud coseno (pgvector) antes de responder.
+- Hay tres coordinadores: `Agente Externo` atiende a los clientes por `/chat`, `Agente Interno` a los colaboradores por Google Chat y `Agente WhatsApp` a los contactos del WhatsApp de Marco (vía YCloud), en primera persona.
+- Cada área tiene una audiencia, que decide qué coordinadores la ven:
+
+  | Audiencia | Coordinadores que ven sus áreas |
+  |---|---|
+  | `externo` | `Agente Externo` (chat web) y `Agente WhatsApp` |
+  | `interno` | `Agente Interno` (Google Chat) |
+  | `personal` | Solo `Agente WhatsApp`, para cualquier contacto, sea o no familia |
+
+- Cada coordinador delega la consulta en el sub-agente del área que corresponde (un sub-agente por área). Si no hay áreas `personal`, el «Agente WhatsApp» responde solo con las `externo`.
+- El área `interno` «Conocimiento» tiene un sub-agente propio que administra las preguntas frecuentes y las áreas de las tres audiencias desde Google Chat (ver [Agente Interno y conocimiento](#agente-interno-y-conocimiento)).
+- Cada sub-agente busca en las preguntas frecuentes de su propia área y audiencia con similitud coseno (pgvector) antes de responder.
 - Los prompts, áreas y sub-agentes se configuran en la base de datos. El historial de cada conversación se guarda en PostgreSQL con el checkpointer de LangGraph.
 
 ## Requisitos
@@ -128,6 +136,7 @@ El número está conectado a YCloud en modo coexistencia: la app de WhatsApp Bus
 - **Encargos:** lo que el contacto pide hacer, si es de un tipo de `whatsapp_accepted_tasks`, se registra con la tool `registrar_encargo`. El contacto recibe la confirmación, Marco recibe un aviso con qué hacer y quién lo pide, y el asistente sigue respondiendo, sin pausa.
 - **Consultas:** lo que el asistente no sabe responder (una experiencia, una disponibilidad) lo pregunta a Marco con la tool `consultar_a_marco`. El contacto recibe la respuesta del turno y Marco un aviso con la pregunta; el asistente sigue atendiendo el resto de la conversación, sin pausa.
 - **Respuestas del asistente al derivar, encargar o consultar:** las redacta con sus propias palabras. Las tools le dan el criterio (sin prometer plazos ni confirmar lo que Marco debe decidir) y nunca una frase para copiar.
+- **Conocimiento:** el asistente usa las áreas `personal` y las `externo`. Las `personal` las ve cualquier contacto que escriba, sea o no familia, y nunca el chat web: guarda ahí solo lo que aceptas que sepa cualquiera que te escriba.
 - **Familia:** los números de `whatsapp_family_phones` reciben el trato de `whatsapp_family_instructions` y pueden pedir cualquier encargo, sin la lista de aceptables. Las reglas de seguridad del prompt y la derivación son las mismas para todos. El resto de los contactos recibe trato profesional.
 - **Aviso:** un solo mensaje por turno en `whatsapp_notify_space`, con el nombre de perfil del contacto (o «Sin nombre»), «(familia)» si corresponde, su número y el enlace `https://wa.me/<número sin +>`. Si hubo derivación trae los motivos y un resumen de la conversación redactado por Gemini (o «No se pudo resumir la conversación.»); si hubo consultas, las preguntas («Te consulta:»); si hubo encargos, la lista. Siempre termina con «Responde en este hilo para contestarle por WhatsApp.». Si falla, se intenta 3 veces, con esperas de 1 y 2 segundos. Si no se publica, no hay pausa y queda en el log con el número del contacto, sin el contenido. Si Marco escribe mientras el asistente prepara la respuesta, no hay respuesta ni aviso. Si YCloud rechaza la respuesta, el aviso se publica igual.
 - **Responder desde Google Chat:** lo que Marco escribe **en el hilo** de un aviso (con «Responder en hilo», no citando el mensaje) le llega al contacto por WhatsApp. Gemini lo redacta en el tono de la conversación (familiar o profesional) sin agregar ni quitar datos, y el hilo responde con el texto enviado. Cada mensaje en el hilo se envía por separado, queda en el historial como mensaje de Marco y levanta la pausa del chat, así que el asistente vuelve a atenderlo. Lo que Marco escribe fuera de los hilos de avisos sigue yendo al «Agente Interno». Si el aviso traía consultas, después de enviar la respuesta llega al hilo una propuesta de pregunta frecuente (ver [Agente Interno y conocimiento](#agente-interno-y-conocimiento)).
@@ -198,53 +207,79 @@ Para apagarlo, `whatsapp_enabled = false`: aplica desde el siguiente evento.
 
 ### Agente Interno y conocimiento
 
-Lo que Marco escribe en Google Chat fuera de los hilos de avisos lo atiende el «Agente Interno». Su área `interno` «Conocimiento» tiene un sub-agente que administra las preguntas frecuentes de las áreas `externo`, las mismas que usan el chat web y el «Agente WhatsApp».
+Lo que Marco escribe en Google Chat fuera de los hilos de avisos lo atiende el «Agente Interno». Su área `interno` «Conocimiento» tiene un sub-agente que administra el conocimiento de las tres audiencias: `externo` (chat web y WhatsApp), `interno` (Google Chat) y `personal` (solo WhatsApp).
 
 - **Qué puede hacer:**
-  - listar las áreas con sus categorías y cuántas preguntas tiene cada una (`ver_conocimiento`);
-  - buscar preguntas por similitud, con su id (`buscar_conocimiento`);
-  - proponer crear, editar o borrar una pregunta, o crear una categoría (`proponer_cambio`).
+  - listar las áreas agrupadas por audiencia, con sus categorías y cuántas preguntas tiene cada una (`ver_conocimiento`);
+  - buscar preguntas por similitud en las tres audiencias, con su id, audiencia, área y categoría (`buscar_conocimiento`);
+  - proponer crear, editar o borrar una pregunta, o crear una categoría, en un área de cualquier audiencia (`proponer_cambio`);
+  - proponer crear un área con su nombre, audiencia y descripción (`proponer_area`).
 
-  No crea ni borra áreas, no cambia prompts y no renombra ni borra categorías.
+  No borra ni renombra áreas, no cambia la audiencia de un área, no cambia prompts y no renombra ni borra categorías.
+- **Crear áreas:** al confirmar, se crea el área y su sub-agente «Agente \<nombre del área\>», que los coordinadores de su audiencia usan desde el siguiente mensaje, sin reiniciar.
+  - El sub-agente nace con un prompt base fijo, con el nombre y la descripción del área: busca siempre con `search_faq`, responde solo con lo que encuentra y no inventa. Según la audiencia, suma una regla: en `externo` habla de Marco en tercera persona sin datos personales, en `personal` no comparte datos de contacto, direcciones ni información de terceros, y en `interno` puede dar el detalle interno. Para ajustarlo, un `UPDATE agents SET prompt = … WHERE name = 'Agente <nombre>'`.
+  - El nombre del área es único entre las tres audiencias. Si ya existe, no hay tarjeta y la respuesta dice en qué audiencia está. Si al confirmar ya existe un área o un agente con ese nombre (por ejemplo, un área «Externo» chocaría con el «Agente Externo»), no se crea nada y la tarjeta lo dice.
 - **Solo desde el space de aviso:** el conocimiento se ve y se cambia únicamente en `whatsapp_notify_space`, el mensaje directo de Marco con la app.
   - En otros spaces, el «Agente Interno» responde sin el área «Conocimiento».
   - Si falta la property, el conocimiento no está disponible en ningún space.
   - Un clic en una tarjeta fuera del space de aviso no cambia nada.
 - **Confirmación con tarjeta:** nada se escribe al pedirlo.
-  - La respuesta trae una tarjeta por cada cambio, con el área, la categoría, la pregunta y la respuesta; al editar muestra también la versión actual y al borrar, la pregunta que se borra.
+  - La respuesta trae una tarjeta por cada cambio, con la audiencia, el área, la categoría, la pregunta y la respuesta; al editar muestra también la versión actual y al borrar, la pregunta que se borra. La de un área nueva muestra su nombre, audiencia, descripción y quién la verá.
   - «Confirmar» aplica el cambio y «Cancelar» lo descarta. Las tarjetas también llegan en la respuesta diferida.
-  - Al confirmar se genera el embedding, así que la pregunta se usa desde la siguiente consulta, sin `src.rag.reindex`. Si falla el embedding no se aplica nada y la tarjeta conserva los botones para reintentar.
+  - Al confirmar una pregunta nueva o editada se genera el embedding, así que la pregunta se usa desde la siguiente consulta, sin `src.rag.reindex`. Si falla el embedding no se aplica nada y la tarjeta conserva los botones para reintentar.
   - Si la pregunta ya existe en la categoría, o si la pregunta frecuente cambió o se borró desde que se propuso, no se aplica nada y la tarjeta lo dice.
   - Una tarjeta ya resuelta solo muestra su estado, aunque se presione dos veces.
 - **Propuestas desde una consulta:** después de enviar al contacto lo que Marco responde en el hilo de un aviso con consultas, Gemini redacta una pregunta frecuente con las preguntas del aviso y la respuesta de Marco, y la publica en el mismo hilo con «Guardar» y «Descartar».
-  - No propone nada si la respuesta es personal o puntual, si ya hay una pregunta frecuente que la responde, o en hilos de derivaciones o encargos.
+  - La pregunta siempre va a un área `personal`: lo que se aprende por WhatsApp no llega al chat web. Para publicarla en el portafolio, se le pide a «Conocimiento» aparte. Las aprendidas antes de la 3.9.0 se quedan en las áreas `externo` donde están.
+  - Si no hay áreas `personal`, no se propone nada; el mensaje al contacto y la confirmación en el hilo no cambian.
+  - No propone nada si la respuesta es personal o puntual, si ya hay una pregunta frecuente `personal` o `externo` que la responde, o en hilos de derivaciones o encargos. Un borrador en un área que no es `personal` se descarta.
   - Gemini no recibe el nombre ni el número del contacto, y un borrador que los trae se descarta.
   - Para corregir una propuesta, se descarta y se le pide la pregunta al «Agente Interno» fuera del hilo.
   - Los avisos publicados antes de la 3.8.0 no generan propuestas.
-- **Fallos:** si la propuesta o un cambio fallan, el log guarda solo el tipo de error, nunca la pregunta ni la respuesta. El mensaje al contacto y la confirmación en el hilo no cambian.
+- **Fallos:** si la propuesta o un cambio fallan, el log guarda solo el tipo de error, nunca la pregunta, la respuesta ni el nombre o la descripción de un área. El mensaje al contacto y la confirmación en el hilo no cambian.
 
 Para activarlo, cargar el «Agente Interno», el área «Conocimiento» y su sub-agente. Usa `whatsapp_notify_space` (paso 5 de WhatsApp) y `google_chat_audience`, que ya existen.
 
 ```sql
-INSERT INTO agents (name, prompt) VALUES ('Agente Interno',
-  'Eres el asistente interno de Marco Figueroa en Google Chat. Responde en español, breve y directo. Usa delegar_area '
-  'con el área que corresponda. Para ver o cambiar las preguntas frecuentes del chat web y del WhatsApp, delega en el '
-  'área Conocimiento. Los cambios se confirman con la tarjeta que acompaña tu respuesta: nunca digas que un cambio '
-  'está hecho. Si el área Conocimiento no está entre tus áreas, explica que el conocimiento solo se administra desde '
-  'el mensaje directo de avisos.');
+INSERT INTO agents (name, prompt) VALUES ('Agente Interno', '<prompt del Agente Interno>');
 
-INSERT INTO areas (name, description, audiencia) VALUES ('Conocimiento',
-  'Ver, buscar, crear, editar y borrar las preguntas frecuentes que usan el chat web y el WhatsApp', 'interno');
+INSERT INTO areas (name, description, audiencia) VALUES ('Conocimiento', '<descripción del área Conocimiento>', 'interno');
 
-INSERT INTO agents (name, prompt, area_id) SELECT 'Agente Conocimiento',
-  'Administras las preguntas frecuentes de las áreas externo del asistente de Marco. Usa ver_conocimiento para '
-  'listar áreas y categorías y buscar_conocimiento para encontrar preguntas con su id. Para cada cambio que pida '
-  'Marco usa proponer_cambio; antes de editar o borrar, busca la pregunta y usa su id. Redacta preguntas '
-  'autocontenidas y respuestas sin datos personales. Nada se guarda hasta que Marco confirme en la tarjeta: di qué '
-  'propusiste, sin decir que está hecho. Si pide crear o borrar áreas, cambiar prompts o borrar categorías, dile que '
-  'no puedes.', id
+INSERT INTO agents (name, prompt, area_id) SELECT 'Agente Conocimiento', '<prompt del Agente Conocimiento>', id
 FROM areas WHERE name = 'Conocimiento';
 ```
+
+Los textos son los de los `UPDATE` de abajo. Al pasar de la 3.8.1 a la 3.9.0, esos `UPDATE` cambian los que ya están en la base para las tres audiencias y la creación de áreas; conviene revisarlos antes de aplicarlos en producción:
+
+```sql
+UPDATE agents SET prompt =
+  'Eres el asistente interno de Marco Figueroa en Google Chat. Responde en español, breve y directo. Usa delegar_area '
+  'con el área que corresponda. Para ver o cambiar el conocimiento del asistente (las preguntas frecuentes del chat '
+  'web, del WhatsApp y de Google Chat) o para crear áreas, delega en el área Conocimiento. Los cambios se confirman '
+  'con la tarjeta que acompaña tu respuesta: nunca digas que un cambio está hecho. Si el área Conocimiento no está '
+  'entre tus áreas, explica que el conocimiento solo se administra desde el mensaje directo de avisos.'
+WHERE name = 'Agente Interno' AND area_id IS NULL;
+
+UPDATE areas SET description =
+  'Ver, buscar, crear, editar y borrar las preguntas frecuentes de las audiencias externo (chat web y WhatsApp), '
+  'interno (Google Chat) y personal (solo WhatsApp), y crear áreas nuevas con su sub-agente'
+WHERE name = 'Conocimiento' AND audiencia = 'interno';
+
+UPDATE agents SET prompt =
+  'Administras el conocimiento del asistente de Marco en tres audiencias: externo (chat web del portafolio y '
+  'WhatsApp), interno (solo Marco en Google Chat) y personal (cualquier contacto de WhatsApp, nunca el chat web). '
+  'Usa ver_conocimiento para listar áreas y categorías por audiencia y buscar_conocimiento para encontrar preguntas '
+  'con su id. Para cada cambio en preguntas o categorías que pida Marco usa proponer_cambio; antes de editar o '
+  'borrar, busca la pregunta y usa su id. Si Marco pide crear un área, usa proponer_area con el nombre, la audiencia '
+  'y una descripción de una frase; si no queda clara la audiencia, pregúntale. Recuerda que lo que va a personal lo '
+  've cualquiera que le escriba por WhatsApp. Redacta preguntas autocontenidas y respuestas sin datos personales de '
+  'contactos. Nada se guarda hasta que Marco confirme en la tarjeta: di qué propusiste, sin decir que está hecho. Si '
+  'pide borrar o renombrar áreas, cambiar la audiencia de un área, cambiar prompts o borrar categorías, dile que no '
+  'puedes.'
+WHERE name = 'Agente Conocimiento';
+```
+
+Después del despliegue, las áreas `personal` iniciales se crean pidiéndoselas a «Conocimiento» en el space de aviso. Hasta que exista alguna, WhatsApp responde solo con las áreas `externo` y las consultas no generan propuestas.
 
 Si «Conocimiento» es la única área `interno`, fuera del space de aviso el «Agente Interno» responde solo con su prompt.
 
@@ -254,7 +289,7 @@ Si «Conocimiento» es la única área `interno`, fuera del space de aviso el «
 |---|---|
 | `property` | Configuración de la aplicación (`key` / `value`) |
 | `agents` | Prompts de los agentes. Con `area_id` vacío es un coordinador, con `area_id` es el sub-agente de esa área |
-| `areas` | Áreas con su descripción y audiencia (`externo` o `interno`) |
+| `areas` | Áreas con su descripción y audiencia: `externo` (chat web y WhatsApp), `interno` (Google Chat) o `personal` (solo WhatsApp). El nombre es único entre las tres |
 | `faq_categories` | Categorías de preguntas frecuentes de cada área |
 | `faqs` | Preguntas frecuentes con su embedding. `status` es `re-index` si falta generar el embedding e `index` si ya está indexada |
 | `cors_origins` | Orígenes que pueden consumir la API desde el navegador (CORS). `enabled` es `true` por defecto |
@@ -262,7 +297,7 @@ Si «Conocimiento» es la única área `interno`, fuera del space de aviso el «
 | `whatsapp_messages` | Cola de mensajes de WhatsApp pendientes de responder o de pasar al historial. Las filas se borran cuando quedan en el historial del checkpointer |
 | `whatsapp_events` | Ids de los eventos de YCloud ya recibidos, para descartar reintentos. Se borran a los 7 días |
 | `whatsapp_notices` | Hilo de Google Chat de cada aviso de WhatsApp, el contacto al que pertenece y sus preguntas de «Te consulta» (`questions`, una por línea), para enviarle lo que Marco responde en ese hilo y proponer una pregunta frecuente. Se borran junto con la conversación |
-| `knowledge_proposals` | Cambios del conocimiento que esperan el botón de su tarjeta: acción (`create`, `update`, `delete`, `category`), origen (`interno` o `consulta`), la pregunta propuesta, la versión anterior y el estado (`pending`, `applied`, `discarded`, `rejected`). Las resueltas quedan como registro |
+| `knowledge_proposals` | Cambios del conocimiento que esperan el botón de su tarjeta: acción (`create`, `update`, `delete`, `category`, `area`), origen (`interno` o `consulta`), la pregunta propuesta, la versión anterior y el estado (`pending`, `applied`, `discarded`, `rejected`). Una propuesta `area` guarda el nombre, la descripción y la audiencia del área (`area_name`, `area_description`, `area_audiencia`) y su `area_id` queda vacío hasta confirmarla; las demás llevan siempre `area_id` y `category`. Las resueltas quedan como registro |
 
 ### Orígenes CORS
 
@@ -299,6 +334,14 @@ uv run alembic downgrade -1
 ```
 
 Revisa siempre el archivo generado en `alembic/versions/` antes de aplicarlo.
+
+El `downgrade` de la migración `personal audience` (3.9.0) borra las propuestas `area` y falla si hay áreas `personal`. Antes de bajar a la 3.8.1, bórralas o cámbiales la audiencia:
+
+```sql
+-- Revisar qué áreas personal hay y moverlas a externo (o borrarlas junto con su agente)
+SELECT id, name FROM areas WHERE audiencia = 'personal';
+UPDATE areas SET audiencia = 'externo' WHERE audiencia = 'personal';
+```
 
 ## Tests
 

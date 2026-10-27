@@ -125,7 +125,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
 
 ## Fase 4 — Documentación, calidad y release
 
-- [ ] **T08 — README**
+- [x] **T08 — README**
   - **RF:** RF-01, RF-02, RF-06, RF-14, RF-16, RF-23
   - **Depende de:** T05, T06, T07
   - **Alcance:** en `README.md`:
@@ -141,7 +141,7 @@ T01 ─┬─► T02 ─► T04 ─┬─► T05 ─► T06 ─┬─► T08 ─
   - **Hecho cuando:** el README menciona `personal` en la descripción de los coordinadores, en la sección de
     conocimiento y en la tabla `areas`, y trae los tres `UPDATE`.
 
-- [ ] **T09 — Puerta de calidad**
+- [x] **T09 — Puerta de calidad**
   - **RF:** —
   - **Depende de:** T03, T08
   - **Alcance:** checklist de `AGENTS.md` sobre la rama completa, y el script SQL de T02, T04 y T05 de punta a punta.
