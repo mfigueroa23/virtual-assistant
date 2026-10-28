@@ -120,7 +120,7 @@
 
 ## Phase 3 — Documentación, calidad y versión
 
-- [ ] **T12 — README y SECURITY.md**
+- [x] **T12 — README y SECURITY.md**
   - **RF:** —
   - **Depende de:** T07, T08, T09, T10, T11
   - **Alcance:** en `README.md`, sección **CI/CD**: workflows nuevos, la App y sus variables, el párrafo de Dependabot
@@ -131,7 +131,7 @@
     `grep -n "open-pull-requests-limit\|chatbot-backend" README.md` no encuentra nada; `SECURITY.md` explica qué
     bloquea y cómo pedir una excepción.
 
-- [ ] **T13 — Puerta de calidad y revisión de seguridad**
+- [x] **T13 — Puerta de calidad y revisión de seguridad**
   - **RF:** RF-25, RF-39, RF-41, RF-42
   - **Depende de:** T12
   - **Alcance:** checklist de `AGENTS.md` y revisión de los workflows.
@@ -140,7 +140,7 @@
     un `pull_request` de Dependabot usa `secrets.`); y E11 pasa (Grype local sobre una imagen `python` vieja con altos
     corregidos, por `ci/sca_gate.py`, sale con 1).
 
-- [ ] **T14 — Subir la versión a 3.10.0**
+- [x] **T14 — Subir la versión a 3.10.0**
   - **RF:** —
   - **Depende de:** T13
   - **Alcance:** `version = "3.10.0"` en `pyproject.toml` y `uv sync`, en un solo commit

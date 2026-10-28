@@ -38,6 +38,15 @@ Para reducir el riesgo:
 - El `.env` contiene las credenciales de la base de datos y **no debe subirse al repositorio** (ya está en `.gitignore`).
 - Usa `.env.example` como plantilla, sin valores reales.
 
+### Análisis de seguridad en CI
+
+- **CodeQL** analiza el código Python y los workflows con la suite `security-extended` en cada PR a `main`, en cada push a `main` y una vez al día. Una alerta nueva de severidad alta o crítica bloquea el merge.
+- **SCA:** Grype escanea `uv.lock` en cada PR y una vez al día, y la imagen Docker (`amd64` y `arm64`) en cada release, antes de publicarla. Un hallazgo crítico o alto que ya tiene versión corregida bloquea el PR o detiene el release sin publicar ni desplegar; los demás solo se reportan.
+- **SBOM:** cada imagen publicada deja un SBOM SPDX por plataforma como artefacto de la ejecución del release.
+- **Dependabot** propone cada semana las versiones nuevas de las dependencias de Python, las GitHub Actions y las imágenes base, y abre de inmediato los PRs de seguridad. Ninguno se fusiona solo.
+
+Los hallazgos se ven en la pestaña **Security → Code scanning** y en el resumen de cada ejecución. Una excepción se pide en un PR que agregue la entrada a `.github/sca-exceptions.json` con el id del advisory, el motivo y una fecha de vencimiento (ver la sección CI/CD del README).
+
 ### Logs
 
 - No registres secretos ni valores de properties sensibles en los logs.

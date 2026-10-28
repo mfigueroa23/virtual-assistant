@@ -256,8 +256,11 @@ Los tests nunca se conectan a la base de datos, a Google ni a Gemini: reemplazan
 
 | Workflow | Cuándo | Qué hace |
 |---|---|---|
-| `.github/workflows/test.yaml` | Push a cualquier rama y PR a `main` | `pyright` + `pytest` |
-| `.github/workflows/release.yaml` | Push a `main` | Verifica, publica la imagen en Docker Hub (`amd64` y `arm64`) y la despliega en Kubernetes (`deployment/chatbot-backend`, namespace `chatbot`) |
+| `.github/workflows/test.yaml` | Push a cualquier rama y PR a `main` | `pyright` + `pytest` (incluye los tests de `ci/`) |
+| `.github/workflows/codeql.yaml` | PR a `main`, push a `main` y a diario | CodeQL con la suite `security-extended` para `python` y `actions`; las alertas van a la pestaña Security |
+| `.github/workflows/sca.yaml` | PR a `main` y a diario | `Lockfile Scan`: Grype escanea `uv.lock` y `ci/sca_gate.py` decide si bloquea |
+| `.github/workflows/dependabot-bump.yaml` | PRs de Dependabot, cambio del `pyproject.toml` de `main` y cada hora | Agrega a cada PR de Dependabot el commit `chore(release): Bump version to vX.Y.Z` con la versión de `main` más un patch |
+| `.github/workflows/release.yaml` | Push a `main` | Verifica, construye la imagen (`amd64` y `arm64`) en un registry local del job, la escanea, la publica en Docker Hub solo si no hay hallazgos bloqueantes, sube su SBOM y la despliega en Kubernetes (`deployment/virtual-assistant`, namespace `virtual-assistant`) |
 
 Configuración necesaria en GitHub:
 
@@ -267,8 +270,28 @@ Configuración necesaria en GitHub:
 | Secret | `DOCKERHUB_TOKEN` | Token de Docker Hub |
 | Secret | `LOCAL_NETWORK` | Service key de Twingate para llegar al cluster |
 | Secret | `KUBE_CONFIG` | kubeconfig del cluster |
+| Variable | `BUMP_APP_ID` | Id de la GitHub App `portfolio-version-bump`, que hace el bump de los PRs de Dependabot |
+| Secret | `BUMP_APP_PRIVATE_KEY` | Clave privada de esa App (secreto de Actions, no de Dependabot) |
 
-`uv.lock` es la única fuente de las versiones instaladas: la imagen y el CI usan `uv sync --locked` y el repo no versiona un `requirements.txt`. `.github/dependabot.yml` declara el ecosistema `uv` para que Dependabot abra los PRs de seguridad sobre `uv.lock`. No abre PRs de versiones nuevas (`open-pull-requests-limit: 0`).
+Además, en los ajustes del repositorio: el *default setup* de CodeQL desactivado (choca con `codeql.yaml`), la App instalada en el repo y el ruleset de `main` con los checks `Type Check & Tests`, `Lockfile Scan`, `Analyze (actions)` y `Analyze (python)` y la regla de code scanning de CodeQL para alertas de seguridad altas o mayores.
+
+### Dependencias y Dependabot
+
+`uv.lock` es la única fuente de las versiones instaladas: la imagen y el CI usan `uv sync --locked` y el repo no versiona un `requirements.txt`. `.github/dependabot.yml` revisa cada lunes `uv`, GitHub Actions y las imágenes base del `Dockerfile`: los updates menores y patch de cada ecosistema llegan en un solo PR y cada mayor en el suyo, con los prefijos `build(deps)` (`uv` y Docker) o `ci(deps)` (Actions). Los PRs de seguridad se abren de inmediato. Ninguno se fusiona solo, porque cada merge a `main` despliega.
+
+Cada PR de Dependabot recibe un commit `chore(release): Bump version to vX.Y.Z` que cambia `pyproject.toml` y la versión del proyecto en `uv.lock`, y se recalcula si la versión de `main` cambia mientras está abierto. Si no se puede aplicar (por ejemplo, por un conflicto con `main`), el PR queda con el status `Version bump` fallido y un comentario: comenta `@dependabot recreate` y el bump se agrega de nuevo.
+
+Las imágenes base van fijadas como `tag@sha256:…` para que Dependabot proponga el PR cuando el tag se mueve. uv tiene su propia etapa `FROM … AS uv`; cuando Dependabot la actualiza, alinea a mano el `version:` de `astral-sh/setup-uv` en `test.yaml` y `release.yaml`.
+
+### Hallazgos de seguridad y excepciones
+
+Un hallazgo del SCA bloquea el PR o el release si es crítico o alto y ya tiene una versión corregida; los demás solo se reportan en el resumen del job y en la pestaña Security. Para aceptar uno temporalmente, agrega una entrada a `.github/sca-exceptions.json` en un PR:
+
+```json
+[{ "id": "GHSA-xxxx-xxxx-xxxx", "reason": "Por qué no aplica o cuándo se corrige", "expires": "2026-12-31" }]
+```
+
+La excepción vale hasta su fecha inclusive y cubre también el CVE relacionado con ese GHSA. Una vencida vuelve a bloquear y una sin `id`, `reason` o `expires` hace fallar el check.
 
 Las migraciones **no** se ejecutan en el pipeline: el contenedor las aplica al arrancar. `entrypoint.sh` ejecuta `alembic upgrade head` (no hace nada si la base de datos ya está en la última migración) y luego inicia la API. Si la migración falla, el contenedor no arranca. Con varias réplicas, un advisory lock de PostgreSQL en `alembic/env.py` hace que solo una las aplique a la vez.
 
@@ -289,6 +312,7 @@ src/
 ├── services/               Lógica de negocio y acceso a datos
 └── utils/exceptions/       Excepciones propias del proyecto
 alembic/                    Migraciones de la base de datos
+ci/                         Scripts del CI: gate del SCA y bump de los PRs de Dependabot
 tests/                      Tests con pytest
 ```
 
