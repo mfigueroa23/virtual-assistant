@@ -15,9 +15,9 @@ from src.services import google_chat, google_chat_reply
 from src.services.attachments import Attachment
 from src.services.google_chat import (
     CHAT_SCOPE, attachments_of, chat_token, conversation_key, create_message, download, mention_of, message_text, service_account_token,
-    verify_addon_token)
+    valid_attachment_name, valid_space, verify_addon_token)
 from src.utils.exceptions.attachments import AttachmentTooLargeError
-from src.utils.exceptions.google_chat import InvalidGoogleTokenError
+from src.utils.exceptions.google_chat import InvalidChatNameError, InvalidGoogleTokenError
 from src.utils.exceptions.property import PropertyNotFoundError
 
 AUDIENCE = "https://chatbot.example/api/v1/google-chat/events"
@@ -461,3 +461,58 @@ def test_e10_un_clic_sin_token_valido_responde_401(monkeypatch, headers):
     response = TestClient(app).post("/api/v1/google-chat/events", json=click_event(), headers=headers)
 
     assert response.status_code == 401
+
+
+# --- spec 013, U-GC-1 a U-GC-5: nombres de Google Chat validados antes de llamar a la API ---
+
+@pytest.mark.parametrize("name", ["spaces/DM1", "spaces/AAAA_b-1"])
+def test_u_gc1_valid_space_acepta_spaces_id(name):
+    assert valid_space(name)
+
+
+@pytest.mark.parametrize("name", [
+    "spaces/../x", "spaces/a/b", "spaces/a?x", "spaces/a%2F", "users/x", "", "spaces/", "spaces/a#b", "spaces/a\n"])
+def test_u_gc1_valid_space_rechaza_otros_formatos(name):
+    assert not valid_space(name)
+
+
+@pytest.mark.parametrize("name", ["spaces/DM1/attachments/A1", "ClxzcGFjZXMvQUFB+QUFBQ_x-y=="])
+def test_u_gc2_valid_attachment_name_acepta_nombres_de_recurso(name):
+    assert valid_attachment_name(name)
+
+
+@pytest.mark.parametrize("name", [
+    "/spaces/x", "spaces/../x", "a/./b", "a?b", "a#b", "a%2e", "a b", "a\nb", "", "a//b", "a/", ".."])
+def test_u_gc2_valid_attachment_name_rechaza_rutas_relativas_y_escapes(name):
+    assert not valid_attachment_name(name)
+
+
+@pytest.mark.anyio
+async def test_u_gc3_create_message_con_space_invalido_no_llama_a_google():
+    seen: list[httpx.Request] = []
+    async with mock_http(b"{}", seen) as http:
+        with pytest.raises(InvalidChatNameError) as error:
+            await create_message("spaces/../../v1/spaces/OTRO", "ok", "ya29.token", http)
+
+    assert seen == [] and "OTRO" not in str(error.value)
+
+
+@pytest.mark.anyio
+async def test_u_gc4_download_con_nombre_invalido_no_llama_a_google():
+    seen: list[httpx.Request] = []
+    async with mock_http(b"x", seen) as http:
+        with pytest.raises(InvalidChatNameError) as error:
+            await download("spaces/A/../../secreto?alt=json", "ya29.token", http)
+
+    assert seen == [] and "secreto" not in str(error.value)
+
+
+@pytest.mark.anyio
+async def test_u_gc5_create_message_valido_va_solo_a_chat_googleapis():
+    seen: list[httpx.Request] = []
+    async with mock_http(b'{"thread": {"name": "spaces/DM1/threads/t1"}}', seen) as http:
+        thread = await create_message("spaces/DM1", "ok", "ya29.token", http, thread = "spaces/DM1/threads/t1")
+
+    assert thread == "spaces/DM1/threads/t1" and len(seen) == 1
+    assert seen[0].url.host == "chat.googleapis.com" and seen[0].url.path == "/v1/spaces/DM1/messages"
+    assert seen[0].url.params["messageReplyOption"] == "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"

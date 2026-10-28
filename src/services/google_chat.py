@@ -11,7 +11,7 @@ from src.interfaces.google_chat import AddonEvent, message_body
 from src.services.attachments import MAX_BYTES, Attachment
 from src.services.property import get_property
 from src.utils.exceptions.attachments import AttachmentTooLargeError
-from src.utils.exceptions.google_chat import InvalidGoogleTokenError
+from src.utils.exceptions.google_chat import InvalidChatNameError, InvalidGoogleTokenError
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +22,21 @@ GOOGLE_ISSUERS = { "accounts.google.com", "https://accounts.google.com" }
 CHAT_SCOPE = "https://www.googleapis.com/auth/chat.bot"
 CHAT_MEDIA_URL = "https://chat.googleapis.com/v1/media"
 CHAT_API_URL = "https://chat.googleapis.com/v1"
+# Los nombres del evento o de la configuración van en la ruta de la URL junto al token de la cuenta de servicio: solo se
+# aceptan los formatos de Google Chat, sin rutas relativas, consultas ni escapes (D8 del plan 013).
+SPACE_NAME = re.compile(r"spaces/[A-Za-z0-9_-]+")
+_SEGMENT = r"(?!\.\.?(?:/|$))[A-Za-z0-9_\-+=~.]+"
+ATTACHMENT_NAME = re.compile(rf"{_SEGMENT}(?:/{_SEGMENT})*")
 
 # Caché de los certificados públicos de Google respetando el max-age que indica Google.
 _certs: dict[str, str] = {}
 _certs_expire_at = 0.0
+
+def valid_space(name: str) -> bool:
+  return SPACE_NAME.fullmatch(name) is not None
+
+def valid_attachment_name(name: str) -> bool:
+  return ATTACHMENT_NAME.fullmatch(name) is not None
 
 async def get_google_certs(http: httpx.AsyncClient) -> dict[str, str]:
   global _certs, _certs_expire_at
@@ -113,6 +124,8 @@ async def chat_token(session: AsyncSession, http: httpx.AsyncClient) -> str | No
 
 async def download(resource_name: str, token: str, http: httpx.AsyncClient) -> bytes:
   # Chat no informa el tamaño del archivo: se corta la descarga al pasar el máximo en vez de cargarlo entero.
+  if not valid_attachment_name(resource_name):
+    raise InvalidChatNameError("adjunto")
   chunks: list[bytes] = []
   size = 0
   headers = { "Authorization": f"Bearer {token}" }
@@ -129,6 +142,8 @@ async def create_message(
   space: str, text: str, token: str, http: httpx.AsyncClient, cards: Sequence[dict[str, Any]] = (), thread: str | None = None
 ) -> str | None:
   """Publica el mensaje y devuelve el hilo que abrió, o None si la respuesta no lo trae."""
+  if not valid_space(space):
+    raise InvalidChatNameError("space")
   # Sin "thread" Google Chat publica el mensaje fuera del hilo original.
   headers = { "Authorization": f"Bearer {token}" }
   body = message_body(text, cards)

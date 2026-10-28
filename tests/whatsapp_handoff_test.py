@@ -372,3 +372,32 @@ def test_u_q6_todo_aviso_indica_que_se_responde_en_el_hilo(args):
     text = notice_text("Sara", CONTACTO, motivos, summary, tasks, False, questions)
 
     assert text.endswith(whatsapp_handoff.RESPONDER)
+
+
+# --- spec 013, U-WH-1 y U-WH-2: space de aviso con formato inválido ---
+
+@pytest.mark.anyio
+async def test_u_wh1_space_invalido_no_pide_token_ni_reintenta(monkeypatch, caplog):
+    chat = FakeChat(monkeypatch, {"whatsapp_notify_space": "spaces/../OTRO"})
+    tokens: list[str] = []
+
+    async def counted_token(session, http):
+        tokens.append("token")
+        return "ya29.token"
+
+    monkeypatch.setattr(whatsapp_handoff, "chat_token", counted_token)
+
+    with caplog.at_level(logging.WARNING, logger = "src.services.whatsapp_handoff"):
+        assert await publish_notice(SESSION, "aviso") is None
+
+    assert tokens == [] and chat.attempts == []
+    assert [record.levelno for record in caplog.records] == [logging.ERROR]
+    assert "OTRO" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_u_wh2_space_valido_con_espacios_publica(monkeypatch):
+    chat = FakeChat(monkeypatch, {"whatsapp_notify_space": " spaces/AAA\n"})
+
+    assert await publish_notice(SESSION, "aviso") == "spaces/AAA/threads/t1"
+    assert chat.attempts == [("spaces/AAA", "aviso")]

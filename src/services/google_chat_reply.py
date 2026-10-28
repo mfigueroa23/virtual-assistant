@@ -16,7 +16,7 @@ from src.interfaces.google_chat import AddonEvent, chat_reply
 from src.services.assistant import ask
 from src.services.attachments import Attachment, read_attachments
 from src.services.google_chat import (
-  attachments_of, chat_token, conversation_key, create_message, download, mention_of, message_text
+  attachments_of, chat_token, conversation_key, create_message, download, mention_of, message_text, valid_space
 )
 from src.services.http import outbound_client
 from src.services.knowledge import CONOCIMIENTO
@@ -163,6 +163,10 @@ async def deliver(processing: asyncio.Task[ChatAnswer], event: AddonEvent) -> No
   space = payload.space if payload else None
   if space is None:
     logger.error("No se pudo publicar la respuesta diferida: el evento no trae el space")
+    return
+  if not valid_space(space.name):
+    # Sin el valor: viene del evento y podría estar armado para ensuciar el log (D9 del plan 013).
+    logger.error("No se pudo publicar la respuesta diferida: el space del evento no tiene un formato válido")
     return
   try:
     async with SessionLocal() as session, outbound_client(20) as http:

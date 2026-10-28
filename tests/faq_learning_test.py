@@ -312,3 +312,18 @@ async def test_schedule_proposal_corre_aparte_y_se_cancela_al_apagar(monkeypatch
     assert len(faq_learning.pending) == 1
     assert await faq_learning.cancel_pending() == 1
     assert not faq_learning.pending
+
+
+# --- spec 013, U-FL-1: hilo con un space inválido ---
+
+@pytest.mark.anyio
+async def test_u_fl1_hilo_con_space_invalido_no_publica_la_propuesta(learning, caplog):
+    proposal = Proposal("p-9", "consulta", "create", "Personal", "Trabajo", None, "¿Kafka?", "Sí.", None, None, "pending",
+                        "personal")
+
+    with caplog.at_level(logging.ERROR, logger = "src.services.faq_learning"):
+        await faq_learning.publish_proposal(cast(Any, None), "spaces/a?b/threads/OTRO", proposal)
+
+    assert learning.published == []
+    assert [record.levelno for record in caplog.records] == [logging.ERROR]
+    assert "OTRO" not in caplog.text and "a?b" not in caplog.text
