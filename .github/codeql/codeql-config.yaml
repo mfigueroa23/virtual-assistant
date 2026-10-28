@@ -1,0 +1,10 @@
+# Setup avanzado de CodeQL (spec 012, RF-01 y RF-08): consultas security-extended sobre el código, sin el entorno
+# virtual ni el bytecode generado.
+name: 'Backend CodeQL'
+
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - .venv
+  - '**/__pycache__'

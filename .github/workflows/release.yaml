@@ -26,12 +26,12 @@ jobs:
       DB_NAME: ci
     steps:
       - name: 'Checkout Code'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: 'Installing uv'
-        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           version: 0.12.23
           enable-cache: true
@@ -45,16 +45,32 @@ jobs:
       - name: 'Tests'
         run: 'uv run pytest'
 
+  # Spec 012, RF-31 a RF-35: la imagen se construye en un registry local del job, se escanea ahí en las dos plataformas
+  # y solo se copia a Docker Hub si pasa el gate, con el digest escaneado, que es el que fija deploy (decisión D7 del
+  # plan). Después, un SBOM por plataforma (D8).
   package:
-    name: 'Build Docker Image'
+    name: 'Build, Scan and Publish Image'
     needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    services:
+      registry:
+        image: registry:3@sha256:01cd312e67026f06f5d89c3e133a4a9adc7cb9eeb9b1194e0b2954dfd770efd2
+        ports:
+          - 5000:5000
+    env:
+      LOCAL: localhost:5000
+      GRYPE_REGISTRY_INSECURE_USE_HTTP: 'true'
+      SYFT_REGISTRY_INSECURE_USE_HTTP: 'true'
     outputs:
       version: ${{ steps.version.outputs.value }}
       digest: ${{ steps.build.outputs.digest }}
     steps:
       - name: 'Checkout Code'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -62,29 +78,118 @@ jobs:
         id: version
         run: echo "value=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" >> "$GITHUB_OUTPUT"
 
+      # Login antes del build solo para bajar la imagen base con cuota; nada se publica en Docker Hub hasta que pasa
+      # el gate del escaneo.
       - name: 'Login to Docker Hub'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: 'Set up QEMU'
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
+      # Red del host y HTTP para que el builder e imagetools lleguen al registry del job.
       - name: 'Set up Buildx'
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        with:
+          driver-opts: network=host
+          buildkitd-config-inline: |
+            [registry."localhost:5000"]
+              http = true
+              insecure = true
 
       - name: 'Build Multi-Platform Image'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         id: build
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ vars.DOCKERHUB_USERNAME }}/virtual-assistant:latest
-            ${{ vars.DOCKERHUB_USERNAME }}/virtual-assistant:${{ steps.version.outputs.value }}
-            ${{ vars.DOCKERHUB_USERNAME }}/virtual-assistant:sha-${{ github.sha }}
+          tags: ${{ env.LOCAL }}/virtual-assistant:${{ github.sha }}
+
+      - name: 'Download Grype'
+        id: grype
+        uses: anchore/scan-action/download-grype@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          grype-version: v0.120.1
+          cache-db: true
+
+      - name: 'Download Syft'
+        id: syft
+        uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          syft-version: v1.54.1
+
+      - name: 'Scan Image'
+        env:
+          GRYPE: ${{ steps.grype.outputs.cmd }}
+        run: |
+          for arch in amd64 arm64; do
+            "$GRYPE" "registry:$LOCAL/virtual-assistant:$GITHUB_SHA" --platform "linux/$arch" \
+              -o json="grype-$arch.json" -o sarif="grype-$arch.sarif"
+          done
+
+      - name: 'Check Findings'
+        run: |
+          python3 ci/sca_gate.py \
+            --title 'virtual-assistant (linux/amd64)' --report grype-amd64.json \
+            --title 'virtual-assistant (linux/arm64)' --report grype-arm64.json
+
+      # Una categoría de code scanning por archivo SARIF: dos ejecuciones no pueden compartirla.
+      - name: 'Upload Scan (amd64)'
+        if: ${{ always() && hashFiles('grype-amd64.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: grype-amd64.sarif
+          category: sca-image-amd64
+
+      - name: 'Upload Scan (arm64)'
+        if: ${{ always() && hashFiles('grype-arm64.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: grype-arm64.sarif
+          category: sca-image-arm64
+
+      # imagetools copia el manifest list tal cual, así Docker Hub recibe el digest escaneado.
+      - name: 'Publish Image'
+        env:
+          REPOSITORY: ${{ vars.DOCKERHUB_USERNAME }}
+          VERSION: ${{ steps.version.outputs.value }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          docker buildx imagetools create \
+            --tag "$REPOSITORY/virtual-assistant:latest" \
+            --tag "$REPOSITORY/virtual-assistant:$VERSION" \
+            --tag "$REPOSITORY/virtual-assistant:sha-$GITHUB_SHA" \
+            "$LOCAL/virtual-assistant@$DIGEST"
+          published=$(docker buildx imagetools inspect "$REPOSITORY/virtual-assistant:sha-$GITHUB_SHA" \
+            --format '{{json .Manifest}}' | jq -r .digest)
+          if [ "$published" != "$DIGEST" ]; then
+            echo "::error::La imagen se publicó como $published en vez del digest escaneado $DIGEST"
+            exit 1
+          fi
+
+      - name: 'Generate SBOM'
+        env:
+          SYFT: ${{ steps.syft.outputs.cmd }}
+          REPOSITORY: ${{ vars.DOCKERHUB_USERNAME }}
+          VERSION: ${{ steps.version.outputs.value }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p sbom
+          for arch in amd64 arm64; do
+            "$SYFT" scan "registry:$LOCAL/virtual-assistant@$DIGEST" --platform "linux/$arch" \
+              --source-name "$REPOSITORY/virtual-assistant:$VERSION" \
+              -o spdx-json="sbom/virtual-assistant-$VERSION-linux-$arch.spdx.json"
+          done
+
+      - name: 'Upload SBOM'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: virtual-assistant-${{ steps.version.outputs.value }}-sbom
+          path: sbom/
+          if-no-files-found: error
 
   deploy:
     name: 'Application Deployment'
@@ -92,18 +197,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 'Connecting to Local Network'
-        uses: twingate/github-action@358e205bb31e636fef1dfb706228ab60eb90c181
+        uses: twingate/github-action@358e205bb31e636fef1dfb706228ab60eb90c181 # v1.11
         with:
           service-key: ${{ secrets.LOCAL_NETWORK }}
 
       - name: 'Deploy Application'
-        uses: steebchen/kubectl@7c4c70d551952e40881998b840e16d4d9824a54f
+        uses: steebchen/kubectl@7c4c70d551952e40881998b840e16d4d9824a54f # v2.1.1
         with:
           config: ${{ secrets.KUBE_CONFIG }}
           command: set image deployment/virtual-assistant virtual-assistant=${{ vars.DOCKERHUB_USERNAME }}/virtual-assistant@${{ needs.package.outputs.digest }} -n virtual-assistant
 
       - name: 'Verify Deployment'
-        uses: steebchen/kubectl@7c4c70d551952e40881998b840e16d4d9824a54f
+        uses: steebchen/kubectl@7c4c70d551952e40881998b840e16d4d9824a54f # v2.1.1
         with:
           config: ${{ secrets.KUBE_CONFIG }}
           command: rollout status deployment/virtual-assistant -n virtual-assistant
