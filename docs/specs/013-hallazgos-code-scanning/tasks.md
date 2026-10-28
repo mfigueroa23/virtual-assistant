@@ -55,7 +55,7 @@
 
 ## Phase 3 — Imagen
 
-- [ ] **T06 — `Dockerfile` sobre `python:3.14-alpine`**
+- [x] **T06 — `Dockerfile` sobre `python:3.14-alpine`**
   - **RF:** RF-10, RF-13, RF-14, RF-15, RF-16, RF-17
   - **Depende de:** — (en paralelo con T01, T05 y T08)
   - **Alcance:** en `Dockerfile`:
@@ -73,7 +73,7 @@
     - `/lib/apk/db/installed` sin `apk-tools`, `ncurses-libs`, `readline`, `perl`, `util-linux` ni `shadow`;
     - con `DB_HOST` inalcanzable, el contenedor sale con código distinto de 0.
 
-- [ ] **T07 — Pre-escaneo de la imagen Alpine**
+- [x] **T07 — Pre-escaneo de la imagen Alpine**
   - **RF:** RF-10, RF-11
   - **Depende de:** T06
   - **Alcance:** antes de correrlo, pedir al owner que apruebe ejecutar `docker run anchore/grype:v0.120.1` (sin
