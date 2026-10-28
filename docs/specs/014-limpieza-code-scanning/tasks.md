@@ -66,7 +66,7 @@
 
 ## Phase 3 — Imagen
 
-- [ ] **T05 — `Dockerfile` sobre `python:3.15-alpine`**
+- [x] **T05 — `Dockerfile` sobre `python:3.15-alpine`**
   - **RF:** RF-05, RF-06, RF-07, RF-08, RF-10, RF-11, RF-12, RF-13, RF-14
   - **Depende de:** T03 (en paralelo con T04)
   - **Alcance:**
@@ -88,7 +88,7 @@
     - `import yaml, zstandard, websockets, asyncpg, greenlet, uvloop` funciona;
     - con `DB_HOST` inalcanzable, el contenedor termina con un código distinto de 0.
 
-- [ ] **T06 — Pre-escaneo de la imagen 3.15 con Grype**
+- [x] **T06 — Pre-escaneo de la imagen 3.15 con Grype**
   - **RF:** RF-15, RF-16
   - **Depende de:** T05
   - **Alcance:** `docker run anchore/grype:v0.120.1` en JSON sobre las dos plataformas de la imagen de T05, sin
@@ -97,6 +97,10 @@
     (decisión "Si la migración resulta inviable" de la spec).
   - **Hecho cuando:** se cumple E3: 0 hallazgos con fix en `amd64` y `arm64`, y no aparecen CVE-2025-15367 ni
     CVE-2026-12345.
+  - **Resultado (2026-10-28):** con la base de Grype del 2026-10-28, hay 0 hallazgos con fix en las dos plataformas,
+    y solo quedan 3 medias sin fix de CVE-2025-60876 (`busybox`, `busybox-binsh` y `ssl_client` 1.37.0-r31), que no
+    llegan a code scanning. En `uv.lock`, `--only-fixed` no reporta nada. E1 y E2 pasaron en las dos plataformas
+    (unos 150 s de build en arm64 nativo y unos 175 s en amd64 emulado).
 
 ## Phase 4 — Cierre
 

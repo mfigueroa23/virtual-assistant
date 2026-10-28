@@ -42,7 +42,7 @@ Para reducir el riesgo:
 
 - **CodeQL** analiza el código Python y los workflows con la suite `security-extended` en cada PR a `main`, en cada push a `main` y una vez al día. Una alerta nueva de severidad alta o crítica bloquea el merge.
 - **SCA:** Grype escanea `uv.lock` en cada PR y una vez al día, y la imagen Docker (`amd64` y `arm64`) en cada release, antes de publicarla. Un hallazgo crítico o alto que ya tiene versión corregida bloquea el PR o detiene el release sin publicar ni desplegar; los demás solo se reportan.
-- **Imagen:** `python:3.14-alpine` fijada por digest, sin ncurses, readline ni gestor de paquetes (`apk-tools`), y la API corre con un usuario sin privilegios.
+- **Imagen:** `python:3.15-alpine` fijada por digest, sin compilador, ncurses, readline ni gestor de paquetes (`apk-tools`), y la API corre con un usuario sin privilegios.
 - **SBOM:** cada imagen publicada deja un SBOM SPDX por plataforma como artefacto de la ejecución del release.
 - **Dependabot** propone cada semana las versiones nuevas de las dependencias de Python, las GitHub Actions y las imágenes base, y abre de inmediato los PRs de seguridad. Ninguno se fusiona solo.
 
