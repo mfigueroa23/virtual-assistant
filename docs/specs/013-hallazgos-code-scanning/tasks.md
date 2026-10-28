@@ -7,7 +7,7 @@
 
 ## Phase 1 — Cimientos
 
-- [ ] **T01 — Validación de nombres de Google Chat en el sink**
+- [x] **T01 — Validación de nombres de Google Chat en el sink**
   - **RF:** RF-01, RF-02, RF-06, RF-07
   - **Depende de:** — (en paralelo con T05, T06 y T08)
   - **Alcance:** `InvalidChatNameError(kind)` en `src/utils/exceptions/google_chat.py`, con un mensaje sin el valor
