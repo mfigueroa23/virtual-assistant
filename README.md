@@ -20,11 +20,11 @@ Backend de asistente virtual, construido con FastAPI, SQLAlchemy (async), LangGr
 
 ## Requisitos
 
-- Python 3.14, fijado en `.python-version` (uv lo usa automáticamente y lo descarga si no está instalado)
+- Python 3.15, fijado en `.python-version` (uv lo usa automáticamente y lo descarga si no está instalado)
 - [uv](https://docs.astral.sh/uv/)
 - PostgreSQL
 
-> Python 3.15 todavía no es compatible: algunas dependencias (`ormsgpack`, `uuid-utils`, `pyyaml`, `zstandard`) no publican wheels para esa versión y uv intenta compilarlas desde el código fuente (`ormsgpack` y `uuid-utils` requieren Rust).
+> `pyyaml`, `zstandard` y `websockets` todavía no publican wheels para Python 3.15, así que `uv sync` las compila desde el código fuente y necesita un compilador de C (en macOS, las Xcode Command Line Tools: `xcode-select --install`; en Linux, `build-essential` o `build-base`). `pyyaml` queda sin libyaml, en su implementación pura.
 
 ## Configuración
 
@@ -88,7 +88,7 @@ uv sync
 uv run alembic upgrade head
 ```
 
-Si `uv sync` falla compilando alguna dependencia, revisa que el entorno virtual use Python 3.14 (`uv run python --version`). Si se creó con otra versión (por ejemplo, después de que Homebrew actualizara `python3`), recréalo:
+Si `uv sync` falla compilando alguna dependencia, revisa que el entorno virtual use Python 3.15 (`uv run python --version`) y que tengas un compilador de C. Si se creó con otra versión (por ejemplo, después de que Homebrew actualizara `python3`), recréalo:
 
 ```bash
 rm -rf .venv

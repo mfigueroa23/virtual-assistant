@@ -2,7 +2,7 @@
 
 Principios innegociables. Toda spec, plan y tarea debe cumplirlos.
 
-1. **Stack fijo:** Python 3.14, FastAPI, SQLAlchemy async + Alembic, LangGraph y PostgreSQL/pgvector, gestionado con `uv`. Agregar dependencias requiere aprobación.
+1. **Stack fijo:** Python 3.15, FastAPI, SQLAlchemy async + Alembic, LangGraph y PostgreSQL/pgvector, gestionado con `uv`. Agregar dependencias requiere aprobación.
 2. **Capas:** `routers` (HTTP) → `services` (lógica) → `models`/`database`; los esquemas van en `interfaces`. Ningún router ejecuta consultas SQL.
 3. **Tipado:** `uv run pyright` termina con 0 errores; cada `# pyright: ignore` lleva su justificación.
 4. **Tests:** todo cambio de comportamiento incluye un test en `tests/`; `uv run pytest` pasa sin BD real ni llamadas al LLM.

@@ -37,7 +37,7 @@
 
 ## Phase 2 — Runtime 3.15
 
-- [ ] **T03 — Python 3.15 en el proyecto, `uv.lock` y la documentación del stack**
+- [x] **T03 — Python 3.15 en el proyecto, `uv.lock` y la documentación del stack**
   - **RF:** RF-05, RF-07, RF-09
   - **Depende de:** T01 (en paralelo con T02)
   - **Alcance:**
@@ -55,14 +55,14 @@
     - `uv run pytest` pasa con al menos 475 tests y `uv run pyright` termina con 0 errores;
     - `grep -n "3\.14" AGENTS.md docs/constitution.md` no devuelve nada.
 
-- [ ] **T04 — uv 0.13.6 en el CI**
+- [x] **T04 — uv 0.13.6 en el CI**
   - **RF:** RF-05
   - **Depende de:** T03 (en paralelo con T05)
   - **Alcance:** `astral-sh/setup-uv` con `version: 0.13.6` en `.github/workflows/test.yaml` y `release.yaml` (D7). No
     cambian ni el SHA del action ni otros pasos.
   - **Hecho cuando:**
     - `grep -n "version: 0\." .github/workflows/test.yaml .github/workflows/release.yaml` muestra `0.13.6` en los dos;
-    - `uvx uv@0.13.6 python list 3.15 --only-downloads --all-platforms` lista `cpython-3.15.2-linux-x86_64-gnu`.
+    - `uvx uv@0.13.6 python list 3.15 --only-downloads --all-platforms --all-arches` lista `cpython-3.15.2-linux-x86_64-gnu`.
 
 ## Phase 3 — Imagen
 
