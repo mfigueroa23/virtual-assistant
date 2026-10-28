@@ -45,14 +45,63 @@ jobs:
       - name: 'Tests'
         run: 'uv run pytest'
 
-  # Spec 012, RF-31 a RF-35: la imagen se construye en un registry local del job, se escanea ahí en las dos plataformas
-  # y solo se copia a Docker Hub si pasa el gate, con el digest escaneado, que es el que fija deploy (decisión D7 del
+  # Cada plataforma se construye en su runner nativo: con QEMU, compilar zstandard para arm64 llevaba el release de
+  # ~8 a ~25 minutos (3.11.0). La imagen sale como layout OCI en un artefacto del run, así nada llega a un registry
+  # hasta que package la escanea.
+  build:
+    name: 'Build Image (${{ matrix.arch }})'
+    needs: verify
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: 'Checkout Code'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Login solo para bajar la imagen base con cuota; este job no publica nada.
+      - name: 'Login to Docker Hub'
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 'Set up Buildx'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: 'Build Image'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          outputs: type=oci,dest=image-${{ matrix.arch }},tar=false
+
+      # Las capas ya vienen comprimidas.
+      - name: 'Upload Image'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: image-${{ matrix.arch }}
+          path: image-${{ matrix.arch }}/
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  # Spec 012, RF-31 a RF-35: las dos plataformas se juntan en un índice en el registry local del job, se escanean ahí y
+  # solo se copian a Docker Hub si pasan el gate, con el digest escaneado, que es el que fija deploy (decisión D7 del
   # plan). Después, un SBOM por plataforma (D8).
   package:
-    name: 'Build, Scan and Publish Image'
-    needs: verify
+    name: 'Scan and Publish Image'
+    needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
       contents: read
       security-events: write
@@ -78,18 +127,14 @@ jobs:
         id: version
         run: echo "value=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')" >> "$GITHUB_OUTPUT"
 
-      # Login antes del build solo para bajar la imagen base con cuota; nada se publica en Docker Hub hasta que pasa
-      # el gate del escaneo.
+      # Login para que imagetools publique en Docker Hub; nada se publica hasta que pasa el gate del escaneo.
       - name: 'Login to Docker Hub'
         uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: 'Set up QEMU'
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
-
-      # Red del host y HTTP para que el builder e imagetools lleguen al registry del job.
+      # Red del host y HTTP para que imagetools llegue al registry del job.
       - name: 'Set up Buildx'
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
@@ -99,14 +144,27 @@ jobs:
               http = true
               insecure = true
 
-      - name: 'Build Multi-Platform Image'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        id: build
+      - name: 'Download Images'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ env.LOCAL }}/virtual-assistant:${{ github.sha }}
+          pattern: image-*
+
+      # crane sube cada layout tal cual (imagen y atestación), e imagetools los junta en un índice con las dos
+      # plataformas: ese es el digest que se escanea, se publica y se despliega.
+      - name: 'Assemble Multi-Platform Image'
+        id: build
+        env:
+          CRANE: gcr.io/go-containerregistry/crane:v0.22.1@sha256:1f968817b95790bed063f71175aa6b8ff879fa17064020415f3e18bb6e6a36e1
+        run: |
+          for arch in amd64 arm64; do
+            docker run --rm --network host -v "$PWD/image-$arch:/layout:ro" "$CRANE" \
+              push /layout "$LOCAL/virtual-assistant:$GITHUB_SHA-$arch" --insecure
+          done
+          docker buildx imagetools create --tag "$LOCAL/virtual-assistant:$GITHUB_SHA" \
+            "$LOCAL/virtual-assistant:$GITHUB_SHA-amd64" "$LOCAL/virtual-assistant:$GITHUB_SHA-arm64"
+          digest=$(docker buildx imagetools inspect "$LOCAL/virtual-assistant:$GITHUB_SHA" \
+            --format '{{json .Manifest}}' | jq -r .digest)
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
       - name: 'Download Grype'
         id: grype
