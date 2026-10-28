@@ -1,6 +1,6 @@
 [project]
 name = "virtual-assistant"
-version = "3.10.5"
+version = "3.10.6"
 license = "Apache-2.0"
 authors = [
     { name = "Marco Antonio Figueroa Sanchez", email = "marcofigueroa23@icloud.com" },
@@ -11,7 +11,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "fastapi[standard]>=0.162.0",
     "google-auth>=2.62.0",
-    "langchain[google-genai]>=1.4.4",
+    "langchain[google-genai]>=1.4.7",
     "langgraph>=1.2.17",
     "langgraph-checkpoint-postgres>=3.2.0",
     "openpyxl>=3.1.5",
