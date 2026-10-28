@@ -260,7 +260,7 @@ Los tests nunca se conectan a la base de datos, a Google ni a Gemini: reemplazan
 | `.github/workflows/codeql.yaml` | PR a `main`, push a `main` y a diario | CodeQL con la suite `security-extended` para `python` y `actions`; las alertas van a la pestaña Security |
 | `.github/workflows/sca.yaml` | PR a `main` y a diario | `Lockfile Scan`: Grype escanea `uv.lock`, `ci/sca_gate.py` decide si bloquea y a code scanning sube solo lo que tiene versión corregida (`--only-fixed`) |
 | `.github/workflows/dependabot-bump.yaml` | PRs de Dependabot, cambio del `pyproject.toml` de `main` y cada hora | Agrega a cada PR de Dependabot el commit `chore(release): Bump version to vX.Y.Z` con la versión de `main` más un patch |
-| `.github/workflows/release.yaml` | Push a `main` | Verifica, construye la imagen (`amd64` y `arm64`) en un registry local del job, la escanea (a code scanning sube solo lo que tiene versión corregida), la publica en Docker Hub solo si no hay hallazgos bloqueantes, sube su SBOM y la despliega en Kubernetes (`deployment/virtual-assistant`, namespace `virtual-assistant`) |
+| `.github/workflows/release.yaml` | Push a `main` | Verifica, construye la imagen de cada plataforma en su runner nativo (`amd64` en `ubuntu-24.04` y `arm64` en `ubuntu-24.04-arm`, sin QEMU), las junta en un índice en un registry local del job, la escanea (a code scanning sube solo lo que tiene versión corregida), la publica en Docker Hub solo si no hay hallazgos bloqueantes, sube su SBOM y la despliega en Kubernetes (`deployment/virtual-assistant`, namespace `virtual-assistant`) |
 
 Configuración necesaria en GitHub:
 
