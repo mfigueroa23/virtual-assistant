@@ -20,7 +20,7 @@
 
 ## Phase 1 — Barrera de CodeQL
 
-- [ ] **T02 — Barrera `re.fullmatch` en `create_message` y `download`**
+- [x] **T02 — Barrera `re.fullmatch` en `create_message` y `download`**
   - **RF:** RF-01, RF-02, RF-03, RF-04
   - **Depende de:** T01 (en paralelo con T03)
   - **Alcance:** en `src/services/google_chat.py`:

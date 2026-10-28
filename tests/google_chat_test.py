@@ -516,3 +516,30 @@ async def test_u_gc5_create_message_valido_va_solo_a_chat_googleapis():
     assert thread == "spaces/DM1/threads/t1" and len(seen) == 1
     assert seen[0].url.host == "chat.googleapis.com" and seen[0].url.path == "/v1/spaces/DM1/messages"
     assert seen[0].url.params["messageReplyOption"] == "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
+
+
+# --- spec 014, U-GC-6 y U-GC-7: la barrera re.fullmatch en el sink que reconoce CodeQL (D1) ---
+
+@pytest.mark.anyio
+async def test_u_gc6_create_message_en_el_hilo_va_solo_a_chat_googleapis():
+    seen: list[httpx.Request] = []
+    async with mock_http(b'{"thread": {"name": "spaces/AAA_b-1/threads/t"}}', seen) as http:
+        await create_message("spaces/AAA_b-1", "ok", "ya29.token", http, thread = "spaces/AAA_b-1/threads/t")
+
+    assert len(seen) == 1 and seen[0].method == "POST"
+    assert str(seen[0].url).startswith("https://chat.googleapis.com/v1/spaces/AAA_b-1/messages?")
+    assert seen[0].url.params["messageReplyOption"] == "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
+    assert json.loads(seen[0].content)["thread"] == {"name": "spaces/AAA_b-1/threads/t"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("space", [
+    "spaces/../x", "spaces/a/b", "spaces/a?x", "spaces/a%2F", "https://evil.test/x", "spaces/AAA\n", ""])
+async def test_u_gc7_create_message_rechaza_el_space_sin_llamar_a_google(space):
+    seen: list[httpx.Request] = []
+    async with mock_http(b"{}", seen) as http:
+        with pytest.raises(InvalidChatNameError) as error:
+            await create_message(space, "ok", "ya29.token", http)
+
+    assert seen == []
+    assert space == "" or space not in str(error.value)
