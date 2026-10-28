@@ -121,13 +121,16 @@ jobs:
         with:
           syft-version: v1.54.1
 
+      # El JSON completo va al gate y al resumen; a code scanning solo sube lo que tiene versión corregida, así los
+      # hallazgos sin fix no entierran los accionables (spec 013, D6 del plan).
       - name: 'Scan Image'
         env:
           GRYPE: ${{ steps.grype.outputs.cmd }}
         run: |
           for arch in amd64 arm64; do
-            "$GRYPE" "registry:$LOCAL/virtual-assistant:$GITHUB_SHA" --platform "linux/$arch" \
-              -o json="grype-$arch.json" -o sarif="grype-$arch.sarif"
+            image="registry:$LOCAL/virtual-assistant:$GITHUB_SHA"
+            "$GRYPE" "$image" --platform "linux/$arch" -o json="grype-$arch.json"
+            "$GRYPE" "$image" --platform "linux/$arch" --only-fixed -o sarif="grype-$arch.sarif"
           done
 
       - name: 'Check Findings'

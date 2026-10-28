@@ -85,7 +85,7 @@
 
 ## Phase 4 — Reportes de SCA
 
-- [ ] **T08 — SARIF solo con hallazgos corregibles**
+- [x] **T08 — SARIF solo con hallazgos corregibles**
   - **RF:** RF-18, RF-19, RF-20, RF-21, RF-23
   - **Depende de:** — (en paralelo con T01, T05 y T06)
   - **Alcance:**

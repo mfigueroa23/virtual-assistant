@@ -39,10 +39,13 @@ jobs:
           grype-version: v0.120.1
           cache-db: true
 
+      # El JSON completo va al gate; a code scanning solo sube lo que tiene versión corregida (spec 013, D6 del plan).
       - name: 'Scan Lockfile'
         env:
           GRYPE: ${{ steps.grype.outputs.cmd }}
-        run: '"$GRYPE" file:uv.lock -o json=grype.json -o sarif=grype.sarif'
+        run: |
+          "$GRYPE" file:uv.lock -o json=grype.json
+          "$GRYPE" file:uv.lock --only-fixed -o sarif=grype.sarif
 
       # El python3 del runner basta: el gate usa solo la biblioteca estándar.
       - name: 'Check Findings'
