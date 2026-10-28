@@ -1,0 +1,82 @@
+name: 'Dependabot Version Bump'
+
+# Mantiene cada PR abierto de Dependabot en la versión de main más un patch (spec 012, RF-18 a RF-25).
+#
+# Una ejecución disparada por Dependabot no tiene secretos (RF-42): `request` solo despacha este workflow en main
+# (decisión D2 del plan). `bump` corre entonces el workflow y el script de main, nunca el código del PR, con el token
+# de la App del bump, cuyos commits sí disparan los checks del PR (D3) y los firma GitHub (D11). También corre cuando
+# cambia el pyproject.toml de main (RF-20) y cada hora, por si un dispatch no llegó.
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    branches:
+      - main
+  push:
+    branches:
+      - main
+    paths:
+      - pyproject.toml
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: 'Número del PR de Dependabot (vacío: todos los abiertos)'
+        required: false
+        type: string
+
+jobs:
+  request:
+    name: 'Request Version Bump'
+    # PRs de Dependabot con push de Dependabot o de una persona; los push de la App se ignoran.
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]' && (github.actor == 'dependabot[bot]' || !endsWith(github.actor, '[bot]')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: 'Dispatch Bump on Main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: 'gh workflow run dependabot-bump.yaml --ref main -f pr="$PR_NUMBER"'
+
+  bump:
+    name: 'Bump Dependabot PRs'
+    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Una ejecución a la vez, así dos nunca reconstruyen la misma rama juntas.
+    concurrency:
+      group: dependabot-bump
+      cancel-in-progress: false
+    steps:
+      - name: 'Checkout Main'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: 'Create App Token'
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.BUMP_APP_ID }}
+          private-key: ${{ secrets.BUMP_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-statuses: write
+          permission-workflows: write
+
+      - name: 'Bump Versions'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ inputs.pr }}
+        run: 'python3 ci/dependabot_bump.py ${PR_NUMBER:+--pr "$PR_NUMBER"}'

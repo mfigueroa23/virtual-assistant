@@ -69,7 +69,7 @@
 
 ## Phase 2 — Workflows
 
-- [ ] **T07 — CodeQL avanzado**
+- [x] **T07 — CodeQL avanzado**
   - **RF:** RF-01, RF-02, RF-03, RF-04, RF-05, RF-08, RF-41
   - **Depende de:** — (en paralelo con T04–T06)
   - **Alcance:** `.github/workflows/codeql.yaml` (matriz `actions` y `python`, `build-mode: none`, disparadores PR,
@@ -78,7 +78,7 @@
   - **Hecho cuando:** actionlint (`docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.7`, sin instalarlo en
     el proyecto) no reporta errores en `codeql.yaml` y cada `uses:` lleva un SHA de 40 caracteres.
 
-- [ ] **T08 — Workflow del SCA de `uv.lock`**
+- [x] **T08 — Workflow del SCA de `uv.lock`**
   - **RF:** RF-26, RF-27, RF-28, RF-29, RF-30, RF-41
   - **Depende de:** T02, T04
   - **Alcance:** `.github/workflows/sca.yaml` con el job `Lockfile Scan` (Grype `file:uv.lock` o la alternativa
@@ -86,7 +86,7 @@
   - **Hecho cuando:** actionlint no reporta errores en `sca.yaml`, cada `uses:` lleva un SHA de 40 caracteres y el
     workflow no referencia `secrets.`.
 
-- [ ] **T09 — Workflow del bump de Dependabot**
+- [x] **T09 — Workflow del bump de Dependabot**
   - **RF:** RF-18, RF-20, RF-22, RF-23, RF-24, RF-25, RF-41, RF-42
   - **Depende de:** T05
   - **Alcance:** `.github/workflows/dependabot-bump.yaml` con el job `request` (solo PRs de `dependabot[bot]`, solo
@@ -96,7 +96,7 @@
   - **Hecho cuando:** actionlint no reporta errores; el job `request` no tiene `secrets.` ni `actions/checkout`; el job
     `bump` tiene `if` que excluye `pull_request` y solo corre en `refs/heads/main`.
 
-- [ ] **T10 — Release con escaneo, gate y SBOM**
+- [x] **T10 — Release con escaneo, gate y SBOM**
   - **RF:** RF-16, RF-31, RF-32, RF-33, RF-34, RF-35, RF-39, RF-40, RF-41, RF-42
   - **Depende de:** T04, T06
   - **Alcance:** en `.github/workflows/release.yaml`, el job `package` pasa a `Build, Scan and Publish Image` con el
@@ -108,7 +108,7 @@
     Docker Hub (`imagetools create`) va después de `Check Findings`; el output `digest` sigue saliendo de
     `steps.build.outputs.digest`; `git diff main -- .github/workflows/test.yaml` solo muestra comentarios.
 
-- [ ] **T11 — Configuración de Dependabot**
+- [x] **T11 — Configuración de Dependabot**
   - **RF:** RF-10, RF-11, RF-12, RF-13, RF-14, RF-15, RF-16, RF-17
   - **Depende de:** T06
   - **Alcance:** reescribir `.github/dependabot.yml` con `uv`, `github-actions` y `docker` semanales, grupos
