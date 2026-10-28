@@ -15,7 +15,7 @@
   - **Hecho cuando:** D14 dice qué se hace con `required_signatures` y, si se mantiene, `git log -1 --format=%G?` de un
     commit nuevo del owner da `G`.
 
-- [ ] **T02 — Pre-escaneo local de `uv.lock` y de la imagen**
+- [x] **T02 — Pre-escaneo local de `uv.lock` y de la imagen**
   - **RF:** RF-26, RF-31
   - **Depende de:** — (en paralelo con T01 y T03)
   - **Alcance:** con `docker run anchore/grype:v0.120.1` (sin instalar nada en el proyecto), escanear `file:uv.lock` y la
