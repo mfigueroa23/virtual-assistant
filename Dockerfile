@@ -1,6 +1,6 @@
 # Las imágenes base van fijadas por digest para que Dependabot proponga un PR cuando el tag se mueve, y uv va en su
 # propia etapa porque Dependabot solo actualiza las líneas FROM (spec 012, decisión D12 del plan).
-FROM ghcr.io/astral-sh/uv:0.12.23@sha256:61d393e44e249f2e4b526b6c7ddcecce245946826e608e11c93ad4f5bba55b21 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 # Stage 1: instala las dependencias de producción en un virtualenv (para la plataforma destino,
 # porque asyncpg y greenlet traen binarios compilados).
