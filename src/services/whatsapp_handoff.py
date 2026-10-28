@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.services.google_chat import chat_token, create_message
+from src.services.google_chat import chat_token, create_message, valid_space
 from src.services.http import outbound_client
 from src.services.property import get_property
 from src.utils.exceptions.property import PropertyNotFoundError
@@ -135,6 +135,10 @@ async def publish_notice(session: AsyncSession, text: str) -> str | None:
     space = ""
   if not space:
     logger.error("Falta la property whatsapp_notify_space: no se publica el aviso de WhatsApp")
+    return None
+  if not valid_space(space):
+    # Sin el valor ni reintentos: un space mal configurado no se arregla solo (D9 del plan 013).
+    logger.error("La property whatsapp_notify_space no es un space válido de Google Chat: no se publica el aviso")
     return None
   async with outbound_client(20) as http:
     token = await chat_token(session, http)

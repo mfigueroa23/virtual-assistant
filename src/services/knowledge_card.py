@@ -147,6 +147,11 @@ async def embedding_of(session: AsyncSession, proposal: Proposal) -> list[float]
   text = to_embedding_text(proposal.category, proposal.question or "", proposal.answer or "")
   return (await llm.embeddings.aembed_documents([text]))[0]
 
+def loggable(value: str) -> str:
+  # El id llega en los parámetros del botón: sin caracteres de control, cada error ocupa una línea del log. El replace de
+  # \r y \n es la forma que CodeQL reconoce como saneada (D10 del plan 013).
+  return "".join(character for character in value if character.isprintable()).replace("\r", "").replace("\n", "")
+
 async def handle_click(session: AsyncSession, event: AddonEvent) -> dict[str, Any]:
   """Atiende un botón de una tarjeta de conocimiento y devuelve la tarjeta actualizada (RF-12 a RF-19)."""
   payload = event.chat.button_clicked_payload if event.chat else None
@@ -172,11 +177,11 @@ async def handle_click(session: AsyncSession, event: AddonEvent) -> dict[str, An
         embedding = await embedding_of(session, current)
       except Exception as exc:
         # Sigue pendiente: los botones quedan para reintentar (RF-15).
-        logger.error("No se pudo generar el embedding de la propuesta %s: %s", proposal_id, type(exc).__name__)
+        logger.error("No se pudo generar el embedding de la propuesta %s: %s", loggable(proposal_id), type(exc).__name__)
         return replaced(payload.message, proposal_card(current, function_url, SIN_EMBEDDING))
     resolution = await resolve_proposal(session, proposal_id, "apply" if decision == "apply" else "discard", embedding)
   except Exception as exc:
-    logger.error("No se pudo resolver la propuesta de conocimiento %s: %s", proposal_id, type(exc).__name__)
+    logger.error("No se pudo resolver la propuesta de conocimiento %s: %s", loggable(proposal_id), type(exc).__name__)
     if current is None:
       return chat_reply(NO_SE_PUDO)
     return replaced(payload.message, proposal_card(current, function_url, NO_SE_PUDO))

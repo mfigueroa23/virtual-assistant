@@ -457,3 +457,39 @@ async def test_u_t10_si_falla_crear_un_area_el_log_no_trae_el_nombre_ni_la_descr
     assert caplog.records
     assert all("colegio" not in record.getMessage() for record in caplog.records)
     assert [button["text"] for button in buttons_of(card)] == ["Confirmar", "Cancelar"]
+
+
+# --- spec 013, U-KC-1 y U-KC-2: el id de propuesta del botón no ensucia el log ---
+
+SUCIO = "p-1\nERROR falso\r\x1b[31m\x00"
+
+
+@pytest.mark.anyio
+async def test_u_kc1_el_id_con_saltos_de_linea_queda_en_una_sola_linea_del_log(clicks, caplog):
+    with caplog.at_level(logging.ERROR, logger = "src.services.knowledge_card"):
+        clicks.embeddings = FakeEmbeddings(RuntimeError("caído"))
+        await handle_click(SESSION, click("apply", proposal_id = SUCIO))
+        clicks.embeddings = FakeEmbeddings()
+        clicks.resolve_error = DatabaseUnavailableError("caído")
+        await handle_click(SESSION, click("apply", proposal_id = SUCIO))
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 2
+    assert all("p-1ERROR falso[31m" in message for message in messages)
+    assert all(character.isprintable() for message in messages for character in message)
+
+
+@pytest.mark.anyio
+async def test_u_kc2_un_id_con_caracteres_de_control_se_busca_tal_cual_y_no_existe(monkeypatch, clicks):
+    searched: list[str] = []
+
+    async def fake_get(session, proposal_id):
+        searched.append(proposal_id)
+        return None
+
+    monkeypatch.setattr(knowledge_card, "get_proposal", fake_get)
+
+    response = await handle_click(SESSION, click("apply", proposal_id = SUCIO))
+
+    assert searched == [SUCIO] and clicks.resolved == []
+    assert "ya no existe" in response["hostAppDataAction"]["chatDataAction"]["createMessageAction"]["message"]["text"]

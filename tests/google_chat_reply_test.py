@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, System
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.interfaces.google_chat import AddonEvent, ChatAttachment, chat_reply
 from src.services import google_chat_reply
+from src.services.attachments import Attachment
 from src.services.google_chat_reply import (
     AVISO, AVISO_DATOS, DEMORA, NO_DISPONIBLE, ChatAnswer, answer, cancel_pending, draft_notice, pending, process,
     read_notice_settings, read_thresholds)
@@ -596,3 +597,75 @@ async def test_u_t4_respuesta_diferida_con_tarjetas(monkeypatch):
     await delivered()
 
     assert published == [{"space": "spaces/DM1", "text": "Te propongo este cambio", "cards": [CARD]}]
+
+
+# --- spec 013, U-GR-1 a U-GR-3: nombres de Google Chat inválidos ---
+
+def event_in(space: str) -> AddonEvent:
+    event = dm_event()
+    assert event.chat and event.chat.message_payload and event.chat.message_payload.space
+    event.chat.message_payload.space.name = space
+    return event
+
+
+async def answered(text: str) -> ChatAnswer:
+    return ChatAnswer(text)
+
+
+@pytest.mark.anyio
+async def test_u_gr1_deliver_con_space_invalido_no_pide_token_ni_publica(monkeypatch, caplog):
+    calls: list[str] = []
+
+    async def fake_chat_token(session, http):
+        calls.append("token")
+        return "ya29.token"
+
+    async def fake_create_message(space, text, token, http, **kwargs):
+        calls.append(space)
+
+    monkeypatch.setattr(google_chat_reply, "chat_token", fake_chat_token)
+    monkeypatch.setattr(google_chat_reply, "create_message", fake_create_message)
+
+    with caplog.at_level(logging.ERROR):
+        await google_chat_reply.deliver(asyncio.create_task(answered("ok")), event_in("spaces/../OTRO"))
+
+    assert calls == []
+    errors = [record for record in caplog.records if record.levelno == logging.ERROR]
+    assert len(errors) == 1 and "OTRO" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_u_gr2_deliver_con_space_valido_publica(published):
+    await google_chat_reply.deliver(asyncio.create_task(answered("ok")), event_in("spaces/DM1"))
+
+    assert published == [("spaces/DM1", "ok")]
+
+
+@pytest.mark.anyio
+async def test_u_gr3_adjunto_invalido_no_se_descarga_y_el_valido_se_lee(monkeypatch, caplog):
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, content=b"hola")
+
+    async def fake_chat_token(session, http):
+        return "ya29.token"
+
+    monkeypatch.setattr(google_chat_reply, "outbound_client",
+                        lambda timeout: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(google_chat_reply, "chat_token", fake_chat_token)
+    monkeypatch.setattr(google_chat_reply, "LLM", SimpleNamespace(create=lambda session: answered_llm()))
+    items = [Attachment("malo.txt", "text/plain", "spaces/A/../../secreto"),
+             Attachment("ok.txt", "text/plain", "spaces/DM1/attachments/A1")]
+
+    with caplog.at_level(logging.WARNING):
+        blocks = (await google_chat_reply.read_files(SESSION, items)).split("\n\n")
+
+    assert blocks == ["[Archivo adjunto: malo.txt · no se pudo leer]", "[Archivo adjunto: ok.txt]\nhola"]
+    assert [request.url.path for request in seen] == ["/v1/media/spaces/DM1/attachments/A1"]
+    assert "secreto" not in caplog.text
+
+
+async def answered_llm() -> SimpleNamespace:
+    return SimpleNamespace(llm=None)

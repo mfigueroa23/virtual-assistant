@@ -19,7 +19,7 @@
 
 ## Phase 2 — Integración con los flujos existentes
 
-- [ ] **T02 — Space inválido en la respuesta diferida y adjuntos inválidos**
+- [x] **T02 — Space inválido en la respuesta diferida y adjuntos inválidos**
   - **RF:** RF-03, RF-07
   - **Depende de:** T01 (en paralelo con T03 y T04)
   - **Alcance:** `deliver` en `src/services/google_chat_reply.py` trata un space inválido como el que falta:
@@ -28,7 +28,7 @@
   - **Hecho cuando:** `uv run pytest tests/google_chat_reply_test.py tests/attachments_test.py` pasa con U-GR-1, U-GR-2
     y U-GR-3. En U-GR-1, `caplog` no contiene el space rechazado.
 
-- [ ] **T03 — Property `whatsapp_notify_space` inválida**
+- [x] **T03 — Property `whatsapp_notify_space` inválida**
   - **RF:** RF-04
   - **Depende de:** T01 (en paralelo con T02 y T04)
   - **Alcance:** `publish_notice` en `src/services/whatsapp_handoff.py` valida la property justo después de leerla. Si
@@ -37,14 +37,14 @@
   - **Hecho cuando:** `uv run pytest tests/whatsapp_handoff_test.py` pasa con U-WH-1 y U-WH-2. En U-WH-1, `FakeChat`
     registra 0 llamadas a `chat_token` y `create_message`.
 
-- [ ] **T04 — Hilo con space inválido al publicar una propuesta**
+- [x] **T04 — Hilo con space inválido al publicar una propuesta**
   - **RF:** RF-05
   - **Depende de:** T01 (en paralelo con T02 y T03)
   - **Alcance:** `publish_proposal` en `src/services/faq_learning.py` valida el space que saca del hilo. Si no es
     válido: un `logger.error` sin el hilo y sale sin publicar (D9). Test en `tests/faq_learning_test.py`.
   - **Hecho cuando:** `uv run pytest tests/faq_learning_test.py` pasa con U-FL-1 y con los tests actuales.
 
-- [ ] **T05 — Id de propuesta limpio en los logs de las tarjetas**
+- [x] **T05 — Id de propuesta limpio en los logs de las tarjetas**
   - **RF:** RF-08, RF-09
   - **Depende de:** — (en paralelo con T01, T06 y T08)
   - **Alcance:** función privada `loggable()` en `src/services/knowledge_card.py`. Quita los caracteres no imprimibles

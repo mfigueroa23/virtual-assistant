@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import LLM
 from src.database.session import SessionLocal
-from src.services.google_chat import chat_token, create_message
+from src.services.google_chat import chat_token, create_message, valid_space
 from src.services.http import outbound_client
 from src.services.knowledge import AreaSummary, KnowledgeHit, Proposal, create_proposal, list_knowledge, search_knowledge
 from src.services.knowledge_card import proposal_card
@@ -122,6 +122,10 @@ async def draft_proposal(session: AsyncSession, notice: NoticeTarget, reply: str
 async def publish_proposal(session: AsyncSession, thread: str, proposal: Proposal) -> None:
   # El hilo trae el space: spaces/<id>/threads/<id>.
   space = thread.split("/threads/")[0]
+  if not valid_space(space):
+    # Sin el hilo: un nombre fuera de formato no se registra tal cual (D9 del plan 013).
+    logger.error("No se publica la propuesta de conocimiento: el hilo no pertenece a un space válido de Google Chat")
+    return
   function_url = await get_property(session, "google_chat_audience")
   async with outbound_client(20) as http:
     token = await chat_token(session, http)
