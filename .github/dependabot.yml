@@ -1,8 +1,66 @@
-# Dependabot solo abre PRs de seguridad sobre uv.lock; con el límite en 0 no abre PRs de versiones nuevas (spec 010).
+# Actualización de dependencias (spec 012, RF-10 a RF-17; reemplaza la configuración de la spec 010). Updates semanales
+# de versiones por ecosistema, menores y patch agrupados y cada mayor en su propio PR; los PRs de seguridad (uv y
+# Actions) se abren de inmediato con el mismo prefijo y etiquetas. Nada se fusiona solo: cada merge a main despliega.
+# El bump de versión de cada PR lo agrega .github/workflows/dependabot-bump.yaml.
 version: 2
+
 updates:
-  - package-ecosystem: "uv"
-    directory: "/"
+  - package-ecosystem: uv
+    directory: /
     schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 0
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Santiago
+    groups:
+      uv-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+    # Escritos a mano en vez de `include: scope`, que al grupo dev le daría `build(deps-dev)` (decisión D9 del plan).
+    commit-message:
+      prefix: 'build(deps)'
+      prefix-development: 'build(deps)'
+    labels:
+      - dependencies
+      - python:uv
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Santiago
+    groups:
+      github-actions-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: 'ci(deps)'
+    labels:
+      - dependencies
+      - github-actions
+
+  # El Dockerfile fija tag@digest, así un tag que se mueve (python:3.14-slim) se actualiza por su digest (D12).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '06:00'
+      timezone: America/Santiago
+    groups:
+      docker-minor-patch:
+        applies-to: version-updates
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: 'build(deps)'
+    labels:
+      - dependencies
+      - docker

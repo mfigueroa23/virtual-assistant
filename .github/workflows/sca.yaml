@@ -1,0 +1,57 @@
+name: 'SCA'
+
+# Análisis de composición de uv.lock (spec 012, RF-26 a RF-30). Grype escanea el archivo sin instalar nada (decisiones
+# D1 y D4 del plan) y ci/sca_gate.py decide qué bloquea y escribe el resumen del job (D5). La imagen se escanea en
+# release.yaml.
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches:
+      - main
+  schedule:
+    - cron: '30 7 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: sca-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lockfile:
+    name: 'Lockfile Scan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: 'Checkout Code'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: 'Download Grype'
+        id: grype
+        uses: anchore/scan-action/download-grype@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          grype-version: v0.120.1
+          cache-db: true
+
+      - name: 'Scan Lockfile'
+        env:
+          GRYPE: ${{ steps.grype.outputs.cmd }}
+        run: '"$GRYPE" file:uv.lock -o json=grype.json -o sarif=grype.sarif'
+
+      # El python3 del runner basta: el gate usa solo la biblioteca estándar.
+      - name: 'Check Findings'
+        run: 'python3 ci/sca_gate.py --title Lockfile --report grype.json'
+
+      # Los PRs de forks reciben un token de solo lectura, así que solo las ejecuciones del mismo repo suben el SARIF.
+      - name: 'Upload to Code Scanning'
+        if: ${{ always() && hashFiles('grype.sarif') != '' && (github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork) }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: grype.sarif
+          category: sca-lockfile

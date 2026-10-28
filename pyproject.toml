@@ -1,6 +1,6 @@
 [project]
 name = "virtual-assistant"
-version = "3.9.0"
+version = "3.10.0"
 license = "Apache-2.0"
 authors = [
     { name = "Marco Antonio Figueroa Sanchez", email = "marcofigueroa23@icloud.com" },
@@ -35,6 +35,6 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.pyright]
-include = ["main.py", "src", "tests", "alembic"]
+include = ["main.py", "src", "tests", "alembic", "ci"]
 venvPath = "."
 venv = ".venv"
