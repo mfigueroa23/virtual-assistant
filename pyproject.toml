@@ -35,6 +35,6 @@ testpaths = ["tests"]
 pythonpath = ["."]
 
 [tool.pyright]
-include = ["main.py", "src", "tests", "alembic"]
+include = ["main.py", "src", "tests", "alembic", "ci"]
 venvPath = "."
 venv = ".venv"

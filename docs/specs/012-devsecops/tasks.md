@@ -38,7 +38,7 @@
 
 ## Phase 1 — Cimientos
 
-- [ ] **T04 — Gate del SCA y archivo de excepciones**
+- [x] **T04 — Gate del SCA y archivo de excepciones**
   - **RF:** RF-28, RF-29, RF-30, RF-33, RF-36, RF-37, RF-38
   - **Depende de:** — (en paralelo con T01–T03)
   - **Alcance:** `ci/__init__.py`; `ci/sca_gate.py` (`validate_exceptions`, `classify`, `findings`, `summary`, CLI con
@@ -47,7 +47,7 @@
     `.dockerignore`.
   - **Hecho cuando:** `uv run pytest tests/ci_sca_gate_test.py` pasa con U-SG-1–U-SG-11 y `uv run pyright` da 0 errores.
 
-- [ ] **T05 — Script del bump de versión**
+- [x] **T05 — Script del bump de versión**
   - **RF:** RF-18, RF-19, RF-20, RF-21, RF-22, RF-23, RF-24, RF-25
   - **Depende de:** T04
   - **Alcance:** `ci/dependabot_bump.py` (`next_patch`, `project_version`, `set_pyproject_version`,
@@ -58,7 +58,7 @@
   - **Hecho cuando:** `uv run pytest tests/ci_dependabot_bump_test.py` pasa con U-DB-1–U-DB-17, `uv run pyright` da 0
     errores y `grep -nE "shell=True|\"git\"|\"uv\"" ci/dependabot_bump.py` no encuentra nada.
 
-- [ ] **T06 — `Dockerfile` con digests y etapa de uv**
+- [x] **T06 — `Dockerfile` con digests y etapa de uv**
   - **RF:** RF-10, RF-31, RF-32
   - **Depende de:** T02, T04
   - **Alcance:** fijar `python:3.14-slim@sha256:…` en las dos etapas y mover uv a `FROM ghcr.io/astral-sh/uv:0.12.23@sha256:… AS uv`
