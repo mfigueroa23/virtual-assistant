@@ -258,9 +258,9 @@ Los tests nunca se conectan a la base de datos, a Google ni a Gemini: reemplazan
 |---|---|---|
 | `.github/workflows/test.yaml` | Push a cualquier rama y PR a `main` | `pyright` + `pytest` (incluye los tests de `ci/`) |
 | `.github/workflows/codeql.yaml` | PR a `main`, push a `main` y a diario | CodeQL con la suite `security-extended` para `python` y `actions`; las alertas van a la pestaña Security |
-| `.github/workflows/sca.yaml` | PR a `main` y a diario | `Lockfile Scan`: Grype escanea `uv.lock` y `ci/sca_gate.py` decide si bloquea |
+| `.github/workflows/sca.yaml` | PR a `main` y a diario | `Lockfile Scan`: Grype escanea `uv.lock`, `ci/sca_gate.py` decide si bloquea y a code scanning sube solo lo que tiene versión corregida (`--only-fixed`) |
 | `.github/workflows/dependabot-bump.yaml` | PRs de Dependabot, cambio del `pyproject.toml` de `main` y cada hora | Agrega a cada PR de Dependabot el commit `chore(release): Bump version to vX.Y.Z` con la versión de `main` más un patch |
-| `.github/workflows/release.yaml` | Push a `main` | Verifica, construye la imagen (`amd64` y `arm64`) en un registry local del job, la escanea, la publica en Docker Hub solo si no hay hallazgos bloqueantes, sube su SBOM y la despliega en Kubernetes (`deployment/virtual-assistant`, namespace `virtual-assistant`) |
+| `.github/workflows/release.yaml` | Push a `main` | Verifica, construye la imagen (`amd64` y `arm64`) en un registry local del job, la escanea (a code scanning sube solo lo que tiene versión corregida), la publica en Docker Hub solo si no hay hallazgos bloqueantes, sube su SBOM y la despliega en Kubernetes (`deployment/virtual-assistant`, namespace `virtual-assistant`) |
 
 Configuración necesaria en GitHub:
 
@@ -281,11 +281,11 @@ Además, en los ajustes del repositorio: el *default setup* de CodeQL desactivad
 
 Cada PR de Dependabot recibe un commit `chore(release): Bump version to vX.Y.Z` que cambia `pyproject.toml` y la versión del proyecto en `uv.lock`, y se recalcula si la versión de `main` cambia mientras está abierto. Si no se puede aplicar (por ejemplo, por un conflicto con `main`), el PR queda con el status `Version bump` fallido y un comentario: comenta `@dependabot recreate` y el bump se agrega de nuevo.
 
-Las imágenes base van fijadas como `tag@sha256:…` para que Dependabot proponga el PR cuando el tag se mueve. uv tiene su propia etapa `FROM … AS uv`; cuando Dependabot la actualiza, alinea a mano el `version:` de `astral-sh/setup-uv` en `test.yaml` y `release.yaml`.
+Las imágenes base van fijadas como `tag@sha256:…` para que Dependabot proponga el PR cuando el tag se mueve. La API corre sobre `python:3.14-alpine`: la etapa final quita ncurses, readline y `apk-tools`, así que dentro del contenedor no hay gestor de paquetes (para depurar, usa una imagen efímera o `kubectl debug`). Un PR de Dependabot que proponga otra minor de Python (por ejemplo `3.15-alpine`) se cierra sin fusionar: el proyecto está fijado en Python 3.14. uv tiene su propia etapa `FROM … AS uv`; cuando Dependabot la actualiza, alinea a mano el `version:` de `astral-sh/setup-uv` en `test.yaml` y `release.yaml`.
 
 ### Hallazgos de seguridad y excepciones
 
-Un hallazgo del SCA bloquea el PR o el release si es crítico o alto y ya tiene una versión corregida; los demás solo se reportan en el resumen del job y en la pestaña Security. Para aceptar uno temporalmente, agrega una entrada a `.github/sca-exceptions.json` en un PR:
+Un hallazgo del SCA bloquea el PR o el release si es crítico o alto y ya tiene una versión corregida; los demás solo se reportan. El resumen del job lista todos los hallazgos, y la pestaña Security recibe solo los que tienen versión corregida (`grype --only-fixed`), para que lo que no se puede corregir no tape lo accionable. Para aceptar uno temporalmente, agrega una entrada a `.github/sca-exceptions.json` en un PR:
 
 ```json
 [{ "id": "GHSA-xxxx-xxxx-xxxx", "reason": "Por qué no aplica o cuándo se corrige", "expires": "2026-12-31" }]

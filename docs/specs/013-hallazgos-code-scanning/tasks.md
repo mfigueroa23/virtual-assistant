@@ -101,7 +101,7 @@
 
 ## Phase 5 — Documentación, verificación y release
 
-- [ ] **T09 — README y SECURITY**
+- [x] **T09 — README y SECURITY**
   - **RF:** RF-10, RF-18, RF-19, RF-20
   - **Depende de:** T06, T08
   - **Alcance:**
@@ -116,7 +116,7 @@
     - `grep -n "slim" README.md SECURITY.md Dockerfile` no devuelve nada;
     - las dos describen el filtro `--only-fixed` del SARIF.
 
-- [ ] **T10 — Puerta de calidad**
+- [x] **T10 — Puerta de calidad**
   - **RF:** —
   - **Depende de:** T02, T03, T04, T05, T07, T08, T09
   - **Alcance:** los comandos de `AGENTS.md` sobre la rama completa.
