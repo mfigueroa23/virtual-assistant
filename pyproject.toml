@@ -9,7 +9,7 @@ requires-python = ">=3.14"
 dependencies = [
     "alembic>=1.20.1",
     "asyncpg>=0.31.0",
-    "fastapi[standard]>=0.142.2",
+    "fastapi[standard]>=0.162.0",
     "google-auth>=2.62.0",
     "langchain[google-genai]>=1.4.4",
     "langgraph>=1.2.17",
