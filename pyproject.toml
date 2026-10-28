@@ -1,11 +1,11 @@
 [project]
 name = "virtual-assistant"
-version = "3.10.8"
+version = "3.11.0"
 license = "Apache-2.0"
 authors = [
     { name = "Marco Antonio Figueroa Sanchez", email = "marcofigueroa23@icloud.com" },
 ]
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 dependencies = [
     "alembic>=1.20.1",
     "asyncpg>=0.31.0",

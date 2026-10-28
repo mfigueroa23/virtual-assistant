@@ -13,7 +13,7 @@ y desplegado en kubernetes.
 - Lint: `uv run pyright`
 
 ## Estilo y convenciones
-- Python 3.14
+- Python 3.15
 - Variables y fuciones en `snake_case`
 - Codigo en ingles
 - Comentarios y respuestas al cliente en español

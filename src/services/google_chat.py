@@ -123,9 +123,11 @@ async def chat_token(session: AsyncSession, http: httpx.AsyncClient) -> str | No
     return None
 
 async def download(resource_name: str, token: str, http: httpx.AsyncClient) -> bytes:
-  # Chat no informa el tamaño del archivo: se corta la descarga al pasar el máximo en vez de cargarlo entero.
-  if not valid_attachment_name(resource_name):
+  # La barrera va escrita aquí y no en valid_attachment_name(): CodeQL solo reconoce un re.fullmatch que sea la
+  # condición del if en la función que arma la URL (D1 y D2 del plan 014).
+  if not re.fullmatch(ATTACHMENT_NAME, resource_name):
     raise InvalidChatNameError("adjunto")
+  # Chat no informa el tamaño del archivo: se corta la descarga al pasar el máximo en vez de cargarlo entero.
   chunks: list[bytes] = []
   size = 0
   headers = { "Authorization": f"Bearer {token}" }
@@ -142,7 +144,8 @@ async def create_message(
   space: str, text: str, token: str, http: httpx.AsyncClient, cards: Sequence[dict[str, Any]] = (), thread: str | None = None
 ) -> str | None:
   """Publica el mensaje y devuelve el hilo que abrió, o None si la respuesta no lo trae."""
-  if not valid_space(space):
+  # Misma barrera que en download (D1 del plan 014).
+  if not re.fullmatch(SPACE_NAME, space):
     raise InvalidChatNameError("space")
   # Sin "thread" Google Chat publica el mensaje fuera del hilo original.
   headers = { "Authorization": f"Bearer {token}" }

@@ -4,10 +4,12 @@ FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d
 
 # Stage 1: instala las dependencias de producción en un virtualenv (para la plataforma destino,
 # porque asyncpg y greenlet traen binarios compilados). Alpine en las dos etapas: el venv usa las ruedas musllinux de
-# uv.lock y protobuf su rueda pura, sin compilador (spec 013, decisiones D1 y D2 del plan).
-FROM python:3.14-alpine@sha256:bc62fbcb684904b1bb81a6240041bb60e9c1ee19ddeaf17a6b4297e1cc9c95d2 AS build
+# uv.lock y protobuf su rueda pura (spec 013, decisiones D1 y D2 del plan). pyyaml, zstandard y websockets no publican
+# ruedas para Python 3.15 y se compilan aquí con build-base, que no pasa a la etapa final (spec 014, D5 y D6 del plan).
+FROM python:3.15-alpine@sha256:0aa144e9ec2ae8fd80dfd94070ef3e432a0df17b6e5e0091dc05323974ce9913 AS build
 COPY --from=uv /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
+RUN apk add --no-cache build-base
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-dev
@@ -19,8 +21,8 @@ COPY src ./src
 # Stage 2: runtime sin privilegios, sin ncurses ni readline y sin gestor de paquetes (RF-10 de la spec 013). Se quitan los
 # módulos de Python que los enlazan (y _tkinter, cuyo Tcl/Tk la imagen no trae), las librerías de runtime se recalculan
 # con scanelf como en el Dockerfile oficial y apk-tools se borra al final (D3, D4).
-FROM python:3.14-alpine@sha256:bc62fbcb684904b1bb81a6240041bb60e9c1ee19ddeaf17a6b4297e1cc9c95d2
-RUN cd /usr/local/lib/python3.14/lib-dynload && rm -f _curses*.so readline*.so _tkinter*.so \
+FROM python:3.15-alpine@sha256:0aa144e9ec2ae8fd80dfd94070ef3e432a0df17b6e5e0091dc05323974ce9913
+RUN cd /usr/local/lib/python3.15/lib-dynload && rm -f _curses*.so readline*.so _tkinter*.so \
   && runDeps="$(scanelf --needed --nobanner --format '%n#p' --recursive /usr/local | tr ',' '\n' | sort -u \
     | awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }')" \
   && apk add --no-network --virtual .api-rundeps $runDeps ca-certificates-bundle \
