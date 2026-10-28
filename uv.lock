@@ -2169,7 +2169,7 @@ wheels = [
 
 [[package]]
 name = "virtual-assistant"
-version = "3.10.5"
+version = "3.10.6"
 source = { virtual = "." }
 dependencies = [
     { name = "alembic" },
