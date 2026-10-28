@@ -27,7 +27,7 @@
     `.source.target` del reporte apuntan a `uv.lock` y Syft cataloga más de 0 paquetes), y la lista de bloqueantes (o
     "ninguno") con la corrección elegida para cada uno queda anotada en D13 del plan.
 
-- [ ] **T03 — Preparar la App y las etiquetas (owner)**
+- [x] **T03 — Preparar la App y las etiquetas (owner)**
   - **RF:** RF-15, RF-18
   - **Depende de:** — (en paralelo con T01 y T02)
   - **Alcance:** instalar `portfolio-version-bump` en `mfigueroa23/virtual-assistant`; crear la variable `BUMP_APP_ID`
