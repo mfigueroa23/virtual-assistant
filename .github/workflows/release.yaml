@@ -215,7 +215,7 @@ jobs:
       # imagetools copia el manifest list tal cual, así Docker Hub recibe el digest escaneado.
       - name: 'Publish Image'
         env:
-          REPOSITORY: ${{ vars.DOCKERHUB_USERNAME }}
+          REPOSITORY: ${{ secrets.DOCKERHUB_ORGANIZATION }}
           VERSION: ${{ steps.version.outputs.value }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
@@ -234,7 +234,7 @@ jobs:
       - name: 'Generate SBOM'
         env:
           SYFT: ${{ steps.syft.outputs.cmd }}
-          REPOSITORY: ${{ vars.DOCKERHUB_USERNAME }}
+          REPOSITORY: ${{ secrets.DOCKERHUB_ORGANIZATION }}
           VERSION: ${{ steps.version.outputs.value }}
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
@@ -266,7 +266,7 @@ jobs:
         uses: steebchen/kubectl@7c4c70d551952e40881998b840e16d4d9824a54f # v2.1.1
         with:
           config: ${{ secrets.KUBE_CONFIG }}
-          command: set image deployment/virtual-assistant virtual-assistant=${{ vars.DOCKERHUB_USERNAME }}/virtual-assistant@${{ needs.package.outputs.digest }} -n virtual-assistant
+          command: set image deployment/virtual-assistant virtual-assistant=${{ secrets.DOCKERHUB_ORGANIZATION }}/virtual-assistant@${{ needs.package.outputs.digest }} -n virtual-assistant
 
       - name: 'Verify Deployment'
         uses: steebchen/kubectl@7c4c70d551952e40881998b840e16d4d9824a54f # v2.1.1
