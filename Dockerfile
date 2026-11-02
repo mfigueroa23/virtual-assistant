@@ -6,7 +6,7 @@ FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d
 # porque asyncpg y greenlet traen binarios compilados). Alpine en las dos etapas: el venv usa las ruedas musllinux de
 # uv.lock y protobuf su rueda pura (spec 013, decisiones D1 y D2 del plan). pyyaml, zstandard y websockets no publican
 # ruedas para Python 3.15 y se compilan aquí con build-base, que no pasa a la etapa final (spec 014, D5 y D6 del plan).
-FROM python:3.15-alpine@sha256:0aa144e9ec2ae8fd80dfd94070ef3e432a0df17b6e5e0091dc05323974ce9913 AS build
+FROM python:3.15-alpine@sha256:20a82dbc2783112ddb91d1534603f802d222a3e63e593cd002eb2ac534e70211 AS build
 COPY --from=uv /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 RUN apk add --no-cache build-base
@@ -21,7 +21,7 @@ COPY src ./src
 # Stage 2: runtime sin privilegios, sin ncurses ni readline y sin gestor de paquetes (RF-10 de la spec 013). Se quitan los
 # módulos de Python que los enlazan (y _tkinter, cuyo Tcl/Tk la imagen no trae), las librerías de runtime se recalculan
 # con scanelf como en el Dockerfile oficial y apk-tools se borra al final (D3, D4).
-FROM python:3.15-alpine@sha256:0aa144e9ec2ae8fd80dfd94070ef3e432a0df17b6e5e0091dc05323974ce9913
+FROM python:3.15-alpine@sha256:20a82dbc2783112ddb91d1534603f802d222a3e63e593cd002eb2ac534e70211
 RUN cd /usr/local/lib/python3.15/lib-dynload && rm -f _curses*.so readline*.so _tkinter*.so \
   && runDeps="$(scanelf --needed --nobanner --format '%n#p' --recursive /usr/local | tr ',' '\n' | sort -u \
     | awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }')" \
